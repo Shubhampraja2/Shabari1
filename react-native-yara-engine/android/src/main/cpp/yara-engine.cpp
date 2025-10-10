@@ -19,6 +19,34 @@ static YR_RULES* g_rules = NULL;
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool g_initialized = false;
 
+// SECURITY: RAII Mutex Guard for thread safety
+class MutexGuard {
+private:
+    pthread_mutex_t* mutex_;
+    bool locked_;
+
+public:
+    explicit MutexGuard(pthread_mutex_t* mutex) : mutex_(mutex), locked_(false) {
+        if (pthread_mutex_lock(mutex_) == 0) {
+            locked_ = true;
+        } else {
+            LOGE("Failed to acquire mutex lock");
+        }
+    }
+
+    ~MutexGuard() {
+        if (locked_) {
+            pthread_mutex_unlock(mutex_);
+        }
+    }
+
+    bool isLocked() const { return locked_; }
+
+    // Prevent copy
+    MutexGuard(const MutexGuard&) = delete;
+    MutexGuard& operator=(const MutexGuard&) = delete;
+};
+
 // Store scan results for callback
 struct ScanResultData {
     std::vector<std::string> matched_rules;
@@ -26,8 +54,8 @@ struct ScanResultData {
     std::string threat_details;
 };
 
-// Helper function to create YaraScanResult object
-jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName, 
+// SECURITY: Helper function to create YaraScanResult object with proper cleanup
+jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
                         const char* category, const char* severity, 
                         jobjectArray matchedRules, const char* details) {
     
@@ -40,16 +68,18 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
     jmethodID constructor = env->GetMethodID(scanResultClass, "<init>", "()V");
     if (!constructor) {
         LOGE("Failed to find YaraScanResult constructor");
+        env->DeleteLocalRef(scanResultClass); // SECURITY: CLEANUP!
         return NULL;
     }
 
     jobject scanResult = env->NewObject(scanResultClass, constructor);
     if (!scanResult) {
         LOGE("Failed to create YaraScanResult object");
+        env->DeleteLocalRef(scanResultClass); // SECURITY: CLEANUP!
         return NULL;
     }
 
-    // Set fields
+    // Get all method IDs at once
     jmethodID setSafeMethod = env->GetMethodID(scanResultClass, "setSafe", "(Z)V");
     jmethodID setThreatNameMethod = env->GetMethodID(scanResultClass, "setThreatName", "(Ljava/lang/String;)V");
     jmethodID setThreatCategoryMethod = env->GetMethodID(scanResultClass, "setThreatCategory", "(Ljava/lang/String;)V");
@@ -57,33 +87,52 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
     jmethodID setDetailsMethod = env->GetMethodID(scanResultClass, "setDetails", "(Ljava/lang/String;)V");
     jmethodID setScanEngineMethod = env->GetMethodID(scanResultClass, "setScanEngine", "(Ljava/lang/String;)V");
 
-    if (setSafeMethod) env->CallVoidMethod(scanResult, setSafeMethod, isSafe);
-    if (setThreatNameMethod && threatName) {
-        jstring jThreatName = env->NewStringUTF(threatName);
-        env->CallVoidMethod(scanResult, setThreatNameMethod, jThreatName);
-        env->DeleteLocalRef(jThreatName);
-    }
-    if (setThreatCategoryMethod && category) {
-        jstring jCategory = env->NewStringUTF(category);
-        env->CallVoidMethod(scanResult, setThreatCategoryMethod, jCategory);
-        env->DeleteLocalRef(jCategory);
-    }
-    if (setSeverityMethod && severity) {
-        jstring jSeverity = env->NewStringUTF(severity);
-        env->CallVoidMethod(scanResult, setSeverityMethod, jSeverity);
-        env->DeleteLocalRef(jSeverity);
-    }
-    if (setDetailsMethod && details) {
-        jstring jDetails = env->NewStringUTF(details);
-        env->CallVoidMethod(scanResult, setDetailsMethod, jDetails);
-        env->DeleteLocalRef(jDetails);
-    }
-    if (setScanEngineMethod) {
-        jstring jEngine = env->NewStringUTF("Shabari YARA v4.5.0");
-        env->CallVoidMethod(scanResult, setScanEngineMethod, jEngine);
-        env->DeleteLocalRef(jEngine);
+    // SECURITY: Set fields with proper cleanup
+    if (setSafeMethod) {
+        env->CallVoidMethod(scanResult, setSafeMethod, isSafe);
     }
 
+    if (setThreatNameMethod && threatName) {
+        jstring jThreatName = env->NewStringUTF(threatName);
+        if (jThreatName) {
+            env->CallVoidMethod(scanResult, setThreatNameMethod, jThreatName);
+            env->DeleteLocalRef(jThreatName); // SECURITY: ALWAYS CLEANUP!
+        }
+    }
+
+    if (setThreatCategoryMethod && category) {
+        jstring jCategory = env->NewStringUTF(category);
+        if (jCategory) {
+            env->CallVoidMethod(scanResult, setThreatCategoryMethod, jCategory);
+            env->DeleteLocalRef(jCategory); // SECURITY: ALWAYS CLEANUP!
+        }
+    }
+
+    if (setSeverityMethod && severity) {
+        jstring jSeverity = env->NewStringUTF(severity);
+        if (jSeverity) {
+            env->CallVoidMethod(scanResult, setSeverityMethod, jSeverity);
+            env->DeleteLocalRef(jSeverity); // SECURITY: ALWAYS CLEANUP!
+        }
+    }
+
+    if (setDetailsMethod && details) {
+        jstring jDetails = env->NewStringUTF(details);
+        if (jDetails) {
+            env->CallVoidMethod(scanResult, setDetailsMethod, jDetails);
+            env->DeleteLocalRef(jDetails); // SECURITY: ALWAYS CLEANUP!
+        }
+    }
+
+    if (setScanEngineMethod) {
+        jstring jEngine = env->NewStringUTF("Shabari YARA v4.5.0");
+        if (jEngine) {
+            env->CallVoidMethod(scanResult, setScanEngineMethod, jEngine);
+            env->DeleteLocalRef(jEngine); // SECURITY: ALWAYS CLEANUP!
+        }
+    }
+
+    env->DeleteLocalRef(scanResultClass); // SECURITY: CLEANUP CLASS REFERENCE!
     return scanResult;
 }
 
@@ -109,49 +158,53 @@ extern "C" {
 
 JNIEXPORT jboolean JNICALL
 Java_com_shabari_yara_YaraEngine_nativeInitialize(JNIEnv* env, jobject thiz) {
-    pthread_mutex_lock(&g_mutex);
-    
+    MutexGuard guard(&g_mutex); // SECURITY: Automatically unlocks on return/exception
+
+    if (!guard.isLocked()) {
+        LOGE("Failed to acquire mutex");
+        return JNI_FALSE;
+    }
+
     if (g_initialized) {
         LOGD("YARA engine already initialized");
-        pthread_mutex_unlock(&g_mutex);
         return JNI_TRUE;
     }
 
     int result = yr_initialize();
     if (result != ERROR_SUCCESS) {
         LOGE("Failed to initialize YARA library: %d", result);
-        pthread_mutex_unlock(&g_mutex);
-        return JNI_FALSE;
+        return JNI_FALSE; // Mutex automatically released
     }
 
     result = yr_compiler_create(&g_compiler);
     if (result != ERROR_SUCCESS) {
         LOGE("Failed to create YARA compiler: %d", result);
         yr_finalize();
-        pthread_mutex_unlock(&g_mutex);
-        return JNI_FALSE;
+        return JNI_FALSE; // Mutex automatically released
     }
 
     g_initialized = true;
     LOGI("YARA engine initialized successfully");
-    pthread_mutex_unlock(&g_mutex);
-    return JNI_TRUE;
+    return JNI_TRUE; // Mutex automatically released
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_shabari_yara_YaraEngine_nativeLoadRules(JNIEnv* env, jobject thiz, jstring rulesContent) {
-    pthread_mutex_lock(&g_mutex);
-    
+    MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
+
+    if (!guard.isLocked()) {
+        LOGE("Failed to acquire mutex");
+        return JNI_FALSE;
+    }
+
     if (!g_initialized || !g_compiler) {
         LOGE("YARA engine not initialized");
-        pthread_mutex_unlock(&g_mutex);
         return JNI_FALSE;
     }
 
     const char* rules = env->GetStringUTFChars(rulesContent, NULL);
     if (!rules) {
         LOGE("Failed to get rules content");
-        pthread_mutex_unlock(&g_mutex);
         return JNI_FALSE;
     }
 
@@ -163,42 +216,43 @@ Java_com_shabari_yara_YaraEngine_nativeLoadRules(JNIEnv* env, jobject thiz, jstr
 
     // Compile rules
     int result = yr_compiler_add_string(g_compiler, rules, NULL);
-    env->ReleaseStringUTFChars(rulesContent, rules);
+    env->ReleaseStringUTFChars(rulesContent, rules); // SECURITY: Release immediately
 
     if (result != 0) {
         LOGE("Failed to compile YARA rules: %d", result);
-        pthread_mutex_unlock(&g_mutex);
         return JNI_FALSE;
     }
 
     result = yr_compiler_get_rules(g_compiler, &g_rules);
     if (result != ERROR_SUCCESS) {
         LOGE("Failed to get compiled rules: %d", result);
-        pthread_mutex_unlock(&g_mutex);
         return JNI_FALSE;
     }
 
     LOGI("YARA rules loaded successfully");
-    pthread_mutex_unlock(&g_mutex);
     return JNI_TRUE;
 }
 
 JNIEXPORT jobject JNICALL
 Java_com_shabari_yara_YaraEngine_nativeScanFile(JNIEnv* env, jobject thiz, jstring filePath) {
-    pthread_mutex_lock(&g_mutex);
-    
+    MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
+
+    if (!guard.isLocked()) {
+        LOGE("Failed to acquire mutex");
+        return createScanResult(env, false, "Mutex Error", "error", "high", NULL,
+                               "Failed to acquire thread lock");
+    }
+
     if (!g_initialized || !g_rules) {
         LOGE("YARA engine not initialized or no rules loaded");
-        pthread_mutex_unlock(&g_mutex);
-        return createScanResult(env, false, "Engine Error", "error", "high", NULL, 
+        return createScanResult(env, false, "Engine Error", "error", "high", NULL,
                                "YARA engine not properly initialized");
     }
 
     const char* path = env->GetStringUTFChars(filePath, NULL);
     if (!path) {
         LOGE("Failed to get file path");
-        pthread_mutex_unlock(&g_mutex);
-        return createScanResult(env, false, "Path Error", "error", "medium", NULL, 
+        return createScanResult(env, false, "Path Error", "error", "medium", NULL,
                                "Invalid file path provided");
     }
 
@@ -211,7 +265,7 @@ Java_com_shabari_yara_YaraEngine_nativeScanFile(JNIEnv* env, jobject thiz, jstri
     int result = yr_rules_scan_file(g_rules, path, SCAN_FLAGS_REPORT_RULES_MATCHING, 
                                    scanCallback, &scan_data, 0);
     
-    env->ReleaseStringUTFChars(filePath, path);
+    env->ReleaseStringUTFChars(filePath, path); // SECURITY: Release immediately
 
     jobject scanResult;
     if (result == ERROR_SUCCESS) {
@@ -243,18 +297,22 @@ Java_com_shabari_yara_YaraEngine_nativeScanFile(JNIEnv* env, jobject thiz, jstri
                                     "Failed to complete file scan");
     }
 
-    pthread_mutex_unlock(&g_mutex);
-    return scanResult;
+    return scanResult; // Mutex automatically released
 }
 
 JNIEXPORT jobject JNICALL
 Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jbyteArray data) {
-    pthread_mutex_lock(&g_mutex);
-    
+    MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
+
+    if (!guard.isLocked()) {
+        LOGE("Failed to acquire mutex");
+        return createScanResult(env, false, "Mutex Error", "error", "high", NULL,
+                               "Failed to acquire thread lock");
+    }
+
     if (!g_initialized || !g_rules) {
         LOGE("YARA engine not initialized or no rules loaded");
-        pthread_mutex_unlock(&g_mutex);
-        return createScanResult(env, false, "Engine Error", "error", "high", NULL, 
+        return createScanResult(env, false, "Engine Error", "error", "high", NULL,
                                "YARA engine not properly initialized");
     }
 
@@ -263,8 +321,7 @@ Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jby
     
     if (!buffer) {
         LOGE("Failed to get buffer data");
-        pthread_mutex_unlock(&g_mutex);
-        return createScanResult(env, false, "Data Error", "error", "medium", NULL, 
+        return createScanResult(env, false, "Data Error", "error", "medium", NULL,
                                "Invalid memory data provided");
     }
 
@@ -277,7 +334,7 @@ Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jby
     int result = yr_rules_scan_mem(g_rules, (const uint8_t*)buffer, buffer_size, 
                                   SCAN_FLAGS_REPORT_RULES_MATCHING, scanCallback, &scan_data, 0);
     
-    env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);
+    env->ReleaseByteArrayElements(data, buffer, JNI_ABORT); // SECURITY: Release immediately
 
     jobject scanResult;
     if (result == ERROR_SUCCESS) {
@@ -306,8 +363,7 @@ Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jby
                                     "Failed to complete memory scan");
     }
 
-    pthread_mutex_unlock(&g_mutex);
-    return scanResult;
+    return scanResult; // Mutex automatically released
 }
 
 JNIEXPORT jstring JNICALL
@@ -337,8 +393,13 @@ Java_com_shabari_yara_YaraEngine_nativeGetLoadedRulesCount(JNIEnv* env, jobject 
 
 JNIEXPORT void JNICALL
 Java_com_shabari_yara_YaraEngine_nativeCleanup(JNIEnv* env, jobject thiz) {
-    pthread_mutex_lock(&g_mutex);
-    
+    MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
+
+    if (!guard.isLocked()) {
+        LOGE("Failed to acquire mutex for cleanup");
+        return;
+    }
+
     if (g_rules) {
         yr_rules_destroy(g_rules);
         g_rules = NULL;
@@ -354,7 +415,6 @@ Java_com_shabari_yara_YaraEngine_nativeCleanup(JNIEnv* env, jobject thiz) {
         g_initialized = false;
     }
 
-    pthread_mutex_unlock(&g_mutex);
     LOGI("YARA engine cleaned up");
 }
 

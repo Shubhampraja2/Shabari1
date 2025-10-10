@@ -16,6 +16,8 @@ public class YaraScanResult {
     private long fileSize;
     private String scanEngine;
     private String details;
+    private boolean isError;
+    private String errorMessage;
 
     public YaraScanResult() {
         this.isSafe = true;
@@ -27,6 +29,8 @@ public class YaraScanResult {
         this.fileSize = 0;
         this.scanEngine = "YARA v4.5.0";
         this.details = "";
+        this.isError = false;
+        this.errorMessage = "";
     }
 
     public YaraScanResult(boolean isSafe, String threatName, String threatCategory, 
@@ -41,6 +45,40 @@ public class YaraScanResult {
         this.fileSize = fileSize;
         this.scanEngine = scanEngine != null ? scanEngine : "YARA v4.5.0";
         this.details = details != null ? details : "";
+        this.isError = false;
+        this.errorMessage = "";
+    }
+
+    // SECURITY: Static factory methods for creating results
+    public static YaraScanResult error(String message) {
+        YaraScanResult result = new YaraScanResult();
+        result.isError = true;
+        result.errorMessage = message != null ? message : "Unknown error";
+        result.isSafe = false;
+        result.details = "Error: " + result.errorMessage;
+        result.severity = "error";
+        result.threatCategory = "error";
+        return result;
+    }
+
+    public static YaraScanResult clean(String engine) {
+        YaraScanResult result = new YaraScanResult();
+        result.isSafe = true;
+        result.scanEngine = engine != null ? engine : "YARA v4.5.0";
+        result.details = "No threats detected";
+        result.severity = "none";
+        return result;
+    }
+
+    public static YaraScanResult threat(String name, String category,
+                                       String severity, String details) {
+        YaraScanResult result = new YaraScanResult();
+        result.isSafe = false;
+        result.threatName = name != null ? name : "Unknown";
+        result.threatCategory = category != null ? category : "malware";
+        result.severity = severity != null ? severity : "medium";
+        result.details = details != null ? details : "Threat detected";
+        return result;
     }
 
     // Getters
@@ -80,7 +118,15 @@ public class YaraScanResult {
         return details;
     }
 
-    // Setters
+    public boolean isError() {
+        return isError;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    // Setters with SECURITY: null protection
     public void setSafe(boolean safe) {
         this.isSafe = safe;
     }
@@ -135,6 +181,8 @@ public class YaraScanResult {
         map.putDouble("fileSize", (double) this.fileSize);
         map.putString("scanEngine", this.scanEngine);
         map.putString("details", this.details);
+        map.putBoolean("isError", this.isError);
+        map.putString("errorMessage", this.errorMessage);
 
         // Convert matched rules list to WritableArray
         WritableArray rulesArray = Arguments.createArray();
@@ -184,7 +232,8 @@ public class YaraScanResult {
                 ", fileSize=" + fileSize +
                 ", scanEngine='" + scanEngine + '\'' +
                 ", details='" + details + '\'' +
+                ", isError=" + isError +
+                ", errorMessage='" + errorMessage + '\'' +
                 '}';
     }
 }
-
