@@ -1,6 +1,7 @@
 /*
  * Simplified YARA Implementation for Android
  * Provides basic pattern matching and threat detection
+ * WITH SECURITY FIXES APPLIED
  */
 
 #include "yara/include/yara.h"
@@ -11,6 +12,16 @@
 #include <cstring>
 #include <algorithm>
 #include <memory>
+#include <map>
+#include <cmath>
+#include <android/log.h>
+
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "YaraImpl", __VA_ARGS__)
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "YaraImpl", __VA_ARGS__)
+
+// SECURITY: Add size limits to prevent buffer overflow
+const size_t MAX_SCAN_SIZE = 50 * 1024 * 1024; // 50MB limit
+const size_t MAX_MEMORY_SCAN = 10 * 1024 * 1024; // 10MB for memory scans
 
 // Global state
 static bool g_initialized = false;
@@ -144,6 +155,63 @@ bool checkFileSignatures(const std::vector<uint8_t>& data) {
     return false;
 }
 
+// SECURITY: Calculate Shannon entropy for obfuscation detection
+double calculateEntropy(const std::vector<uint8_t>& data, size_t maxBytes = 8192) {
+    if (data.empty()) return 0.0;
+
+    size_t sampleSize = std::min(data.size(), maxBytes);
+    std::map<uint8_t, int> frequency;
+
+    for (size_t i = 0; i < sampleSize; i++) {
+        frequency[data[i]]++;
+    }
+
+    double entropy = 0.0;
+    for (const auto& pair : frequency) {
+        double probability = static_cast<double>(pair.second) / sampleSize;
+        entropy -= probability * log2(probability);
+    }
+
+    return entropy;
+}
+
+// SECURITY: Detect suspicious byte patterns (shellcode, etc.)
+bool detectSuspiciousBytePatterns(const std::vector<uint8_t>& data) {
+    if (data.size() < 16) return false;
+
+    // NOP sled detection (common in exploits)
+    int nopCount = 0;
+    for (size_t i = 0; i < std::min(data.size(), size_t(1024)); i++) {
+        if (data[i] == 0x90) { // x86 NOP instruction
+            nopCount++;
+            if (nopCount > 50) {
+                LOGD("NOP sled detected - possible shellcode");
+                return true; // Suspicious NOP sled
+            }
+        } else {
+            nopCount = 0;
+        }
+    }
+
+    // Check for common shellcode patterns
+    static const uint8_t SHELLCODE_PATTERNS[][4] = {
+        {0xEB, 0x0B, 0x5E, 0x31}, // Common shellcode stub
+        {0x31, 0xC0, 0x50, 0x68}, // execve shellcode
+        {0x6A, 0x0B, 0x58, 0x99}, // syscall pattern
+    };
+
+    for (const auto& pattern : SHELLCODE_PATTERNS) {
+        for (size_t i = 0; i < data.size() - 3; i++) {
+            if (memcmp(&data[i], pattern, 4) == 0) {
+                LOGD("Shellcode pattern detected");
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 // YARA API Implementation
 extern "C" {
 
@@ -238,30 +306,57 @@ int yr_rules_scan_file(YR_RULES* rules, const char* filename, int flags,
     // Read file content
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
+        LOGE("Failed to open file: %s", filename);
         return ERROR_COULD_NOT_OPEN_FILE;
     }
     
-    // Read file into memory
+    // SECURITY: Get file size FIRST
     file.seekg(0, std::ios::end);
     size_t file_size = file.tellg();
     file.seekg(0, std::ios::beg);
     
-    std::vector<uint8_t> buffer(file_size);
+    // SECURITY: Check size limit BEFORE allocation
+    if (file_size > MAX_SCAN_SIZE) {
+        LOGE("File too large for scanning: %zu bytes (max: %zu)", file_size, MAX_SCAN_SIZE);
+        file.close();
+        return ERROR_TOO_MANY_SCAN_THREADS; // Reuse error code
+    }
+
+    // SECURITY: Validate allocation succeeded
+    std::vector<uint8_t> buffer;
+    try {
+        buffer.resize(file_size);
+    } catch (const std::bad_alloc& e) {
+        LOGE("Failed to allocate memory for file scan");
+        file.close();
+        return ERROR_INSUFFICIENT_MEMORY;
+    }
+
     file.read(reinterpret_cast<char*>(buffer.data()), file_size);
     file.close();
     
     // Convert to string for pattern matching
     std::string content(buffer.begin(), buffer.end());
     
-    // Check for malware patterns
+    // Multi-layered detection
     std::vector<std::string> matched_patterns;
-    bool has_malware = containsMalwarePatterns(content, matched_patterns);
-    
-    // Check file signatures
+    bool has_string_malware = containsMalwarePatterns(content, matched_patterns);
     bool has_suspicious_header = checkFileSignatures(buffer);
-    
-    // If we found patterns and have a callback, call it
-    if ((has_malware || has_suspicious_header) && callback) {
+    bool has_suspicious_bytes = detectSuspiciousBytePatterns(buffer);
+
+    // SECURITY: Entropy analysis for packed/encrypted content
+    double entropy = calculateEntropy(buffer);
+    bool high_entropy = (entropy > 7.5); // Highly random = possibly encrypted/packed
+
+    if (high_entropy) {
+        LOGD("High entropy detected (%.2f) - possibly packed/encrypted", entropy);
+    }
+
+    bool is_threat = has_string_malware || has_suspicious_header ||
+                     has_suspicious_bytes || high_entropy;
+
+    // If threat detected and callback provided, invoke it
+    if (is_threat && callback) {
         YR_RULE dummy_rule = {0};
         dummy_rule.identifier = const_cast<char*>("malware_detected");
         
@@ -273,26 +368,41 @@ int yr_rules_scan_file(YR_RULES* rules, const char* filename, int flags,
         }
     }
     
-    return (has_malware || has_suspicious_header) ? ERROR_CALLBACK_ERROR : ERROR_SUCCESS;
+    return is_threat ? ERROR_CALLBACK_ERROR : ERROR_SUCCESS;
 }
 
 int yr_rules_scan_mem(YR_RULES* rules, const uint8_t* buffer, size_t buffer_size, 
                      int flags, YR_CALLBACK_FUNC callback, void* user_data, int timeout) {
     if (!rules || !buffer) return ERROR_INVALID_ARGUMENT;
     
+    // SECURITY: Check memory scan size limit
+    if (buffer_size > MAX_MEMORY_SCAN) {
+        LOGE("Memory buffer too large for scanning: %zu bytes (max: %zu)",
+             buffer_size, MAX_MEMORY_SCAN);
+        return ERROR_TOO_MANY_SCAN_THREADS;
+    }
+
     // Convert buffer to string for pattern matching
     std::string content(reinterpret_cast<const char*>(buffer), buffer_size);
     
-    // Check for malware patterns
+    // Multi-layered detection
     std::vector<std::string> matched_patterns;
     bool has_malware = containsMalwarePatterns(content, matched_patterns);
     
     // Check signatures
     std::vector<uint8_t> data(buffer, buffer + buffer_size);
     bool has_suspicious_header = checkFileSignatures(data);
-    
+    bool has_suspicious_bytes = detectSuspiciousBytePatterns(data);
+
+    // Entropy analysis
+    double entropy = calculateEntropy(data);
+    bool high_entropy = (entropy > 7.5);
+
+    bool is_threat = has_malware || has_suspicious_header ||
+                     has_suspicious_bytes || high_entropy;
+
     // If we found patterns and have a callback, call it
-    if ((has_malware || has_suspicious_header) && callback) {
+    if (is_threat && callback) {
         YR_RULE dummy_rule = {0};
         dummy_rule.identifier = const_cast<char*>("malware_detected");
         
@@ -304,7 +414,7 @@ int yr_rules_scan_mem(YR_RULES* rules, const uint8_t* buffer, size_t buffer_size
         }
     }
     
-    return (has_malware || has_suspicious_header) ? ERROR_CALLBACK_ERROR : ERROR_SUCCESS;
+    return is_threat ? ERROR_CALLBACK_ERROR : ERROR_SUCCESS;
 }
 
-} // extern "C" 
+} // extern "C"

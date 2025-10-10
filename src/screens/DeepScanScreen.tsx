@@ -19,6 +19,8 @@ import DeepScanService, {
   DeepScanResult,
   DeepScanThreat,
 } from '../services/DeepScanService';
+// Import Enhanced Deep Scan Service
+import EnhancedDeepScanService from '../services/EnhancedDeepScanService';
 import QuarantineService from '../services/QuarantineService';
 
 // ==============================================================================
@@ -194,7 +196,7 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
           text: 'Cancel Scan',
           style: 'destructive',
           onPress: () => {
-            DeepScanService.cancelScan();
+            EnhancedDeepScanService.cancelScan();
             setIsScanning(false);
             setScanProgress(null);
           },

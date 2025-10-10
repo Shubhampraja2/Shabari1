@@ -1,7 +1,9 @@
 package com.shabari.yara;
 
+import android.content.Context;
 import android.util.Log;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,6 +12,19 @@ public class YaraEngine {
     private static boolean nativeLibraryLoaded = false;
     private static boolean nativeLibraryAttempted = false;
     
+    // SECURITY: Define allowed directories to prevent path traversal
+    private static final String[] ALLOWED_DIRECTORIES = {
+        "/data/user/0/", // App's private directory
+        "/storage/emulated/0/Download/", // Downloads
+        "/sdcard/Download/", // Alternative downloads path
+        "/data/data/" // App data directory
+    };
+
+    // SECURITY: Size limits
+    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+    private Context context;
+
     static {
         if (!nativeLibraryAttempted) {
             try {
@@ -30,6 +45,11 @@ public class YaraEngine {
 
     public YaraEngine() {
         this.ruleManager = new YaraRuleManager();
+    }
+
+    // SECURITY: Set context for path validation
+    public void setContext(Context context) {
+        this.context = context;
     }
 
     // Native method declarations (only used if native library is available)
@@ -88,9 +108,61 @@ public class YaraEngine {
         }
     }
 
+    /**
+     * SECURITY: Validates file path to prevent path traversal attacks
+     */
+    private boolean isPathSafe(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            Log.e(TAG, "File path is null or empty");
+            return false;
+        }
+
+        try {
+            File file = new File(filePath);
+            String canonicalPath = file.getCanonicalPath();
+
+            // SECURITY: Block obvious path traversal attempts
+            if (filePath.contains("..") || filePath.contains("./")) {
+                Log.e(TAG, "Path traversal attempt blocked: " + filePath);
+                return false;
+            }
+
+            // Check if path is within allowed directories
+            for (String allowedDir : ALLOWED_DIRECTORIES) {
+                if (canonicalPath.startsWith(allowedDir)) {
+                    return true;
+                }
+            }
+
+            // Also allow app's own cache/files directories
+            if (context != null) {
+                String appDir = context.getFilesDir().getCanonicalPath();
+                String cacheDir = context.getCacheDir().getCanonicalPath();
+
+                if (canonicalPath.startsWith(appDir) ||
+                    canonicalPath.startsWith(cacheDir)) {
+                    return true;
+                }
+            }
+
+            Log.e(TAG, "Path outside allowed directories blocked: " + canonicalPath);
+            return false;
+
+        } catch (IOException e) {
+            Log.e(TAG, "Error validating path", e);
+            return false;
+        }
+    }
+
     public boolean loadRules(String rulesPath) {
         if (!isInitialized) {
             Log.e(TAG, "YARA engine not initialized");
+            return false;
+        }
+
+        // SECURITY: Validate path before use
+        if (!isPathSafe(rulesPath)) {
+            Log.e(TAG, "Security: Invalid rules path blocked");
             return false;
         }
 
@@ -98,6 +170,12 @@ public class YaraEngine {
             File rulesFile = new File(rulesPath);
             if (!rulesFile.exists()) {
                 Log.e(TAG, "Rules file does not exist: " + rulesPath);
+                return false;
+            }
+
+            // SECURITY: Additional check - file must be readable
+            if (!rulesFile.canRead()) {
+                Log.e(TAG, "Rules file not readable: " + rulesPath);
                 return false;
             }
 
@@ -147,19 +225,37 @@ public class YaraEngine {
     public YaraScanResult scanFile(String filePath) {
         if (!isInitialized) {
             Log.e(TAG, "YARA engine not initialized");
-            return null;
+            return createErrorResult("Engine not initialized");
+        }
+
+        // SECURITY: Validate path before scanning
+        if (!isPathSafe(filePath)) {
+            Log.e(TAG, "Security: Invalid file path blocked");
+            return createErrorResult("Invalid file path - security violation");
         }
 
         try {
             File file = new File(filePath);
             if (!file.exists()) {
                 Log.e(TAG, "File does not exist: " + filePath);
-                return null;
+                return createErrorResult("File not found");
             }
 
             if (!file.canRead()) {
                 Log.e(TAG, "Cannot read file: " + filePath);
-                return null;
+                return createErrorResult("File not readable");
+            }
+
+            // SECURITY: Check file size before scanning
+            long fileSize = file.length();
+            if (fileSize > MAX_FILE_SIZE) {
+                Log.e(TAG, "File too large for scanning: " + fileSize + " bytes");
+                return createErrorResult("File too large (max 50MB)");
+            }
+
+            if (fileSize == 0) {
+                Log.w(TAG, "File is empty: " + filePath);
+                return createCleanResult();
             }
 
             long startTime = System.currentTimeMillis();
@@ -182,27 +278,42 @@ public class YaraEngine {
                 result.setScanTime((int)(endTime - startTime));
                 result.setFileSize(file.length());
                 Log.d(TAG, "File scan completed in " + (endTime - startTime) + "ms");
+            } else {
+                result = createErrorResult("Scan returned null result");
             }
 
             return result;
         } catch (Exception e) {
             Log.e(TAG, "Exception scanning file", e);
-            return null;
+            return createErrorResult("Scan failed: " + e.getMessage());
         }
     }
 
     public YaraScanResult scanMemory(byte[] data) {
         if (!isInitialized) {
             Log.e(TAG, "YARA engine not initialized");
-            return null;
+            return createErrorResult("Engine not initialized");
+        }
+
+        // SECURITY: Validate input
+        if (data == null) {
+            Log.e(TAG, "Memory data is null");
+            return createErrorResult("Memory data is null");
+        }
+
+        if (data.length == 0) {
+            Log.e(TAG, "Memory data is empty");
+            return createErrorResult("Memory data is empty");
+        }
+
+        // SECURITY: Check size limit (10MB for memory scans)
+        final int MAX_MEMORY_SCAN = 10 * 1024 * 1024;
+        if (data.length > MAX_MEMORY_SCAN) {
+            Log.e(TAG, "Memory data too large: " + data.length + " bytes (max: 10MB)");
+            return createErrorResult("Memory data too large (max 10MB)");
         }
 
         try {
-            if (data == null || data.length == 0) {
-                Log.e(TAG, "Memory data is empty");
-                return null;
-            }
-
             long startTime = System.currentTimeMillis();
             YaraScanResult result;
             
@@ -223,12 +334,14 @@ public class YaraEngine {
                 result.setScanTime((int)(endTime - startTime));
                 result.setFileSize(data.length);
                 Log.d(TAG, "Memory scan completed in " + (endTime - startTime) + "ms");
+            } else {
+                result = createErrorResult("Scan returned null result");
             }
 
             return result;
         } catch (Exception e) {
             Log.e(TAG, "Exception scanning memory", e);
-            return null;
+            return createErrorResult("Scan failed: " + e.getMessage());
         }
     }
 
