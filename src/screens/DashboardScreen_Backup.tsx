@@ -1496,7 +1496,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 <Text style={{ color: 'white', textAlign: 'center' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={{ backgroundColor: '#ff6b6b', padding: 15, borderRadius: 8, flex: 1 }}
+                stylcd "C:\Users\Shubham prajapati\Downloads\Shabari-App-Final\Shabari"e={{ backgroundColor: '#ff6b6b', padding: 15, borderRadius: 8, flex: 1 }}
                 onPress={performLinkScan}
                 disabled={isScanning}
               >
