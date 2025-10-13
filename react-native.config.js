@@ -9,5 +9,14 @@ module.exports = {
         },
       },
     },
+    'react-native-proxy-engine': {
+      platforms: {
+        android: {
+          sourceDir: __dirname + '/react-native-proxy-engine/android/app',
+          packageImportPath: 'import com.reactnativeproxyengine.ReactNativeProxyEnginePackage;',
+          packageInstance: 'new ReactNativeProxyEnginePackage()',
+        },
+      },
+    },
   },
-}; 
+};

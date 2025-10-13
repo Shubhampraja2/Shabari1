@@ -1,28 +1,32 @@
-# Gradle caches
-/android/.gradle
-/android/app/.gradle
-/android/.cxx
-/android/app/.cxx
-/android/app/build
-/android/build
+# Ignore node_modules (but NOT local native modules that we need)
+node_modules/@*
+node_modules/[a-q]*
+node_modules/[s-z]*
+node_modules/react-[a-m]*
+node_modules/react-[o-z]*
 
-# Node modules (already in .gitignore but good to have here)
-node_modules/
+# Ignore build outputs and cache
+.expo/**
+dist/**
+android/app/build/**
+android/.gradle/**
+android/build/**
 
-# Build outputs
-*.apk
-*.aab
-*.ipa
+# Ignore cache and temp files
+.cache/**
+tmp/**
+temp/**
 
-# Local configuration
-.env.local
-.env.*.local
+# Ignore local native module build outputs but KEEP source code
+react-native-yara-engine/android/build/**
+react-native-yara-engine/android/.cxx/**
+react-native-proxy-engine/android/build/**
+react-native-proxy-engine/android/.cxx/**
 
-# IDE
-.vscode/
-.idea/
-
-# Temporary files
+# Ignore local files
 *.log
-*.tmp
 .DS_Store
+.env.local
+
+# Ignore patches that may have complex patterns
+patches/**

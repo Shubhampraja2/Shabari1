@@ -40,6 +40,12 @@ module.exports = {
       "android.permission.POST_NOTIFICATIONS"
     ]
   },
+  "owner": "shubhamprana1",
+  "extra": {
+    "eas": {
+      "projectId": "352370c7-352b-4b07-999b-cf492f1bffa9"
+    }
+  },
   "plugins": [
     "expo-dev-client",
     "expo-notifications",
@@ -63,10 +69,5 @@ module.exports = {
         "extraProguardRules": "-keep class com.google.android.gms.auth.api.credentials.** { *; }\n-dontwarn com.google.android.gms.**\n-dontwarn me.furtado.smsretriever.**\n-keep class com.google.android.gms.common.** { *; }\n-keep class com.google.android.gms.tasks.** { *; }\n"
       }
     }]
-  ],
-  "extra": {
-    "eas": {
-      "projectId": "f51eb8e6-5481-4d41-9035-50a633a75ee3"
-    }
-  }
+  ]
 };

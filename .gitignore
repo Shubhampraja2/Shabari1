@@ -18,8 +18,12 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-# CNG/Prebuild - Generated native directories
-/android
+# CNG/Prebuild - Generated native directories (SELECTIVE)
+# Allow android config files but ignore build outputs
+/android/build/
+/android/.gradle/
+/android/app/build/
+/android/*/build/
 /ios
 
 # Metro

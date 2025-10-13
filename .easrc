@@ -1,0 +1,51 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "requireCommit": false,
+    "appVersionSource": "remote"
+  }
+}
+# EAS Build Ignore File
+# This file tells EAS Build which files to ignore during compression
+
+# Node modules (already handled by package.json)
+node_modules/
+
+# Build artifacts
+android/build/
+android/app/build/
+android/.gradle/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Documentation that's not needed for build
+*.md
+!README.md
+
+# Build scripts (not needed in cloud build)
+build-*.js
+fix-*.js
+check-*.js
+test-*.js
+validate-*.js
+
+# Old keystores (keep only the one in use)
+*_OLD_*.jks
+
