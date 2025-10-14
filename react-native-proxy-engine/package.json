@@ -61,5 +61,10 @@
   "bugs": {
     "url": "https://github.com/shabari-security/react-native-proxy-engine/issues"
   },
-  "homepage": "https://github.com/shabari-security/react-native-proxy-engine#readme"
+  "homepage": "https://github.com/shabari-security/react-native-proxy-engine#readme",
+  "overrides": {
+    "glob": "^10.4.5",
+    "minimatch": "^9.0.5",
+    "brace-expansion": "^2.0.1"
+  }
 }

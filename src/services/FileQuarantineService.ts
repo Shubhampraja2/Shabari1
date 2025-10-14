@@ -1,15 +1,15 @@
 import * as FileSystem from 'expo-file-system';
 
-// Check if RNFS is available
-let RNFS: any = null;
-let isRNFSAvailable = false;
+// Use expo-file-system (already available in dependencies)
+let ExpoFS: any = null;
+let isExpoFSAvailable = false;
 
 try {
-  RNFS = require('react-native-fs');
-  isRNFSAvailable = true;
-  console.log('✅ RNFS loaded successfully for FileQuarantineService');
+  ExpoFS = FileSystem;
+  isExpoFSAvailable = true;
+  console.log('✅ Expo FileSystem loaded successfully for FileQuarantineService');
 } catch (error) {
-  console.log('⚠️ RNFS not available - using Expo FileSystem for FileQuarantineService');
+  console.log('⚠️ Expo FileSystem not available for FileQuarantineService');
 }
 
 export interface FileQuarantineResult {
@@ -36,10 +36,10 @@ export class FileQuarantineService {
   private quarantinePath: string;
 
   private constructor() {
-    // Use RNFS path if available, otherwise use Expo FileSystem path
-    this.quarantinePath = isRNFSAvailable && RNFS ?
-      `${RNFS.DocumentDirectoryPath}/quarantine/` :
-      `${FileSystem.documentDirectory}quarantine/`;
+    // Use Expo FileSystem path
+    this.quarantinePath = isExpoFSAvailable && ExpoFS ?
+      `${ExpoFS.documentDirectory}quarantine/` :
+      '/data/quarantine/';
   }
 
   static getInstance(): FileQuarantineService {
@@ -54,14 +54,7 @@ export class FileQuarantineService {
    */
   async ensureQuarantineDirectory(): Promise<boolean> {
     try {
-      if (isRNFSAvailable && RNFS) {
-        // Use RNFS
-        const exists = await RNFS.exists(this.quarantinePath);
-        if (!exists) {
-          await RNFS.mkdir(this.quarantinePath);
-          console.log('📁 Created RNFS quarantine directory:', this.quarantinePath);
-        }
-      } else {
+      if (isExpoFSAvailable && ExpoFS) {
         // Use Expo FileSystem
         const dirInfo = await FileSystem.getInfoAsync(this.quarantinePath);
         if (!dirInfo.exists) {
@@ -181,45 +174,25 @@ export class FileQuarantineService {
       const quarantineFileName = `${timestamp}_${sanitizedFileName}`;
       const quarantineFullPath = `${this.quarantinePath}${quarantineFileName}`;
 
-      if (isRNFSAvailable && RNFS) {
-        // Use RNFS for file operations
-        const sourceExists = await RNFS.exists(sourcePath);
-        if (!sourceExists) {
-          return { success: false, error: 'Source file does not exist' };
-        }
-
-        // Copy file to quarantine
-        await RNFS.copyFile(sourcePath, quarantineFullPath);
-
-        // Save metadata
-        if (scanResult) {
-          await this.saveMetadata(quarantineFileName, scanResult);
-        }
-
-        console.log(`✅ File quarantined with RNFS: ${quarantineFileName}`);
-        return { success: true, quarantinedPath: quarantineFullPath };
-
-      } else {
-        // Use Expo FileSystem
-        const sourceInfo = await FileSystem.getInfoAsync(sourcePath);
-        if (!sourceInfo.exists) {
-          return { success: false, error: 'Source file does not exist' };
-        }
-
-        // Copy file to quarantine
-        await FileSystem.copyAsync({
-          from: sourcePath,
-          to: quarantineFullPath
-        });
-
-        // Save metadata
-        if (scanResult) {
-          await this.saveMetadataExpo(quarantineFileName, scanResult);
-        }
-
-        console.log(`✅ File quarantined with Expo FileSystem: ${quarantineFileName}`);
-        return { success: true, quarantinedPath: quarantineFullPath };
+      // Use Expo FileSystem
+      const sourceInfo = await FileSystem.getInfoAsync(sourcePath);
+      if (!sourceInfo.exists) {
+        return { success: false, error: 'Source file does not exist' };
       }
+
+      // Copy file to quarantine
+      await FileSystem.copyAsync({
+        from: sourcePath,
+        to: quarantineFullPath
+      });
+
+      // Save metadata
+      if (scanResult) {
+        await this.saveMetadataExpo(quarantineFileName, scanResult);
+      }
+
+      console.log(`✅ File quarantined with Expo FileSystem: ${quarantineFileName}`);
+      return { success: true, quarantinedPath: quarantineFullPath };
 
     } catch (error) {
       console.error('❌ Error quarantining file:', error);
@@ -266,51 +239,17 @@ export class FileQuarantineService {
    */
   private async getFileInfo(filePath: string): Promise<{ size: number; exists: boolean }> {
     try {
-      if (isRNFSAvailable && RNFS) {
-        const exists = await RNFS.exists(filePath);
-        if (!exists) {
-          return { size: 0, exists: false };
-        }
-        const stats = await RNFS.stat(filePath);
-        return { size: stats.size, exists: true };
-      } else {
-        const fileInfo = await FileSystem.getInfoAsync(filePath);
-        // Check if file exists and has size property
-        if (!fileInfo.exists) {
-          return { size: 0, exists: false };
-        }
-        // Type guard to check if size property exists
-        const size = 'size' in fileInfo ? fileInfo.size : 0;
-        return { size: size || 0, exists: true };
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      // Check if file exists and has size property
+      if (!fileInfo.exists) {
+        return { size: 0, exists: false };
       }
+      // Type guard to check if size property exists
+      const size = 'size' in fileInfo ? fileInfo.size : 0;
+      return { size: size || 0, exists: true };
     } catch (error) {
       console.error('❌ Error getting file info:', error);
       return { size: 0, exists: false };
-    }
-  }
-
-  /**
-   * Save metadata using RNFS
-   */
-  private async saveMetadata(fileName: string, scanResult: FileScanResult): Promise<void> {
-    if (!isRNFSAvailable || !RNFS) return;
-
-    try {
-      const metadata = {
-        threatLevel: scanResult.threatLevel,
-        threatName: scanResult.threatName,
-        scanEngine: scanResult.scanEngine,
-        details: scanResult.details,
-        confidence: scanResult.confidence,
-        scanTime: new Date().toISOString(),
-        originalFileName: fileName
-      };
-
-      const metadataPath = `${this.quarantinePath}${fileName}.meta`;
-      await RNFS.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
-      console.log('💾 Saved quarantine metadata:', metadataPath);
-    } catch (error) {
-      console.warn('⚠️ Failed to save quarantine metadata:', error);
     }
   }
 

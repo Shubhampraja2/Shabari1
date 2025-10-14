@@ -170,7 +170,11 @@ export class EnhancedDeepScanService {
   private scanInProgress: boolean = false;
   private shouldCancelScan: boolean = false;
   private currentScanId: string | null = null;
-  private quarantineService: typeof SecureQuarantineService;
+  private quarantineService: InstanceType<typeof SecureQuarantineService>;
+
+  // 🛡️ SECURITY FIX: Add circular reference protection
+  private scannedPaths: Set<string> = new Set();
+  private symlinksDetected: number = 0;
 
   private constructor() {
     this.quarantineService = SecureQuarantineService.getInstance();
@@ -189,11 +193,13 @@ export class EnhancedDeepScanService {
 
   /**
    * ENHANCED Deep Scan with recursive scanning and auto-quarantine
+   * 🛡️ SECURITY: Protected against path traversal, infinite loops, and memory exhaustion
    */
   async performDeepScan(
     config: Partial<DeepScanConfig> = {},
     onProgress?: (progress: DeepScanProgress) => void
   ): Promise<DeepScanResult> {
+    // 🛡️ SECURITY: Prevent multiple concurrent scans (race condition)
     if (this.scanInProgress) {
       throw new Error('A scan is already in progress');
     }
@@ -203,6 +209,7 @@ export class EnhancedDeepScanService {
     this.currentScanId = scanId;
     this.scanInProgress = true;
     this.shouldCancelScan = false;
+    this.scannedPaths.clear(); // ✅ Reset circular reference tracker
 
     const startTime = new Date();
     const threatsDetected: DeepScanThreat[] = [];
@@ -478,6 +485,15 @@ export class EnhancedDeepScanService {
     let maxDepth = currentDepth;
 
     try {
+      // 🛡️ SECURITY FIX: Prevent circular references and infinite loops
+      const normalizedPath = directoryPath.toLowerCase().replace(/\\/g, '/');
+      if (this.scannedPaths.has(normalizedPath)) {
+        console.warn(`⚠️ Circular reference detected: ${directoryPath} (already scanned)`);
+        this.symlinksDetected++;
+        return { filesScanned, safeFiles, skippedFiles, errors, bytesScanned, threats, subdirectoriesScanned, maxDepth };
+      }
+      this.scannedPaths.add(normalizedPath);
+
       // Check depth limit
       if (!config.recursiveScan || currentDepth >= config.maxDepth) {
         if (currentDepth >= config.maxDepth) {
@@ -501,6 +517,13 @@ export class EnhancedDeepScanService {
       // First pass: scan files
       for (const itemName of items) {
         if (this.shouldCancelScan) break;
+
+        // 🛡️ SECURITY: Enhanced path injection protection
+        if (this.isSuspiciousFileName(itemName)) {
+          console.warn(`⚠️ Security: Skipping item with suspicious name: ${itemName}`);
+          skippedFiles++;
+          continue;
+        }
 
         const itemPath = `${directoryPath}/${itemName}`;
 
@@ -884,6 +907,7 @@ export class EnhancedDeepScanService {
       if (canAccessExternal) {
         const baseStorage = '/storage/emulated/0';
 
+        // 🛡️ SECURITY: Only add validated, safe directories
         if (config.scanDownloads) directories.push(`${baseStorage}/Download`);
         if (config.scanDocuments) directories.push(`${baseStorage}/Documents`);
         if (config.scanImages) {
@@ -896,12 +920,30 @@ export class EnhancedDeepScanService {
         }
       }
 
-      // Always scan app directories
+      // Always scan app directories (safe)
       if (FileSystem.documentDirectory) {
         directories.push(FileSystem.documentDirectory);
       }
 
-      return directories.filter(dir => !this.isDevelopmentDirectory(dir));
+      // 🛡️ SECURITY: Filter out development and potentially dangerous directories
+      return directories.filter(dir => {
+        const normalized = dir.toLowerCase();
+
+        // Remove dev directories
+        if (this.isDevelopmentDirectory(dir)) {
+          console.log(`⚠️ Skipping development directory: ${dir}`);
+          return false;
+        }
+
+        // Remove system-critical directories that shouldn't be scanned
+        const dangerousDirs = ['/system', '/proc', '/sys', '/dev', '/root'];
+        if (dangerousDirs.some(d => normalized.startsWith(d))) {
+          console.warn(`⚠️ Security: Skipping system directory: ${dir}`);
+          return false;
+        }
+
+        return true;
+      });
 
     } catch (error) {
       console.error('❌ Error getting directories:', error);
@@ -928,6 +970,34 @@ export class EnhancedDeepScanService {
 
   private isCommonHiddenFile(fileName: string): boolean {
     return ['.nomedia', '.gitignore', '.htaccess'].includes(fileName);
+  }
+
+  /**
+   * 🛡️ SECURITY: Enhanced path injection detection
+   * Protects against path traversal, null bytes, and other injection attacks
+   */
+  private isSuspiciousFileName(fileName: string): boolean {
+    // Path traversal attempts
+    if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+      return true;
+    }
+
+    // Null byte injection
+    if (fileName.includes('\0') || fileName.includes('%00')) {
+      return true;
+    }
+
+    // Control characters
+    if (/[\x00-\x1F\x7F]/.test(fileName)) {
+      return true;
+    }
+
+    // Extremely long names (potential buffer overflow)
+    if (fileName.length > 255) {
+      return true;
+    }
+
+    return false;
   }
 
   private async createThreatRecord(

@@ -1,0 +1,6 @@
+rootProject.name = 'react-native-yara-engine'
+include ':app'
+
+// Point to the library module
+project(':app').projectDir = file('.')
+

@@ -38,18 +38,11 @@ export const ProxyEngineTest: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Phase 1 Hotfix: Check if proxy engine is available before initializing
-      if (!proxyEngineService.isAvailable()) {
-        console.log('⚠️ ProxyEngineTest: Proxy engine not available on this device');
-        setIsInitialized(false);
-        setCurrentStatus({
-          status: 'unavailable',
-          isRunning: false,
-          message: 'Proxy engine is not available on this device'
-        });
-        return;
-      }
-      
+      // Check engine status first
+      const engineStatus = await proxyEngineService.getEngineStatus();
+      console.log('🔍 ProxyEngineTest: Engine status:', engineStatus);
+
+      // Initialize even if mock
       const initResult = await proxyEngineService.initialize();
       if (!initResult.success) {
         console.log('⚠️ ProxyEngineTest: Failed to initialize proxy engine:', initResult.message);
@@ -57,7 +50,8 @@ export const ProxyEngineTest: React.FC = () => {
         setCurrentStatus({
           status: 'error',
           isRunning: false,
-          message: initResult.message
+          message: initResult.message,
+          engineType: engineStatus.engineType
         });
         return;
       }
@@ -66,10 +60,15 @@ export const ProxyEngineTest: React.FC = () => {
       
       // Get initial status
       const status = await proxyEngineService.getStatus();
-      setCurrentStatus(status);
+      setCurrentStatus({
+        ...status,
+        engineType: engineStatus.engineType,
+        native: engineStatus.native
+      });
       setIsProtectionRunning(status.isRunning);
       
-      console.log('✅ Proxy Engine Service initialized');
+      const engineTypeDisplay = engineStatus.native ? 'Native' : 'Mock';
+      console.log(`✅ Proxy Engine Service initialized (${engineTypeDisplay})`);
     } catch (error) {
       console.error('❌ ProxyEngineTest: Failed to initialize Proxy Engine Service:', error);
       setIsInitialized(false);
@@ -78,7 +77,6 @@ export const ProxyEngineTest: React.FC = () => {
         isRunning: false,
         message: `Initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
-      // Don't show alert - just log the error and set status
     } finally {
       setIsLoading(false);
     }

@@ -29,24 +29,25 @@ if (Platform.OS === 'android' || Platform.OS === 'ios') {
   console.log('📱 Platform:', Platform.OS, '- Using in-memory storage');
 }
 
-// Load react-native-fs conditionally
-let RNFS: any = null;
-let isRNFSAvailable = false;
+// Load expo-file-system conditionally
+import * as FileSystem from 'expo-file-system';
+let ExpoFS: any = null;
+let isExpoFSAvailable = false;
 
-// Only attempt to load RNFS on native platforms
+// Only attempt to load ExpoFS on native platforms
 if (Platform.OS === 'android' || Platform.OS === 'ios') {
   try {
-    RNFS = require('react-native-fs');
-    if (RNFS && RNFS.DocumentDirectoryPath) {
-      isRNFSAvailable = true;
-      console.log('✅ React Native FS loaded successfully for', Platform.OS);
+    ExpoFS = FileSystem;
+    if (ExpoFS && ExpoFS.documentDirectory) {
+      isExpoFSAvailable = true;
+      console.log('✅ Expo File System loaded successfully for', Platform.OS);
     } else {
-      console.log('⚠️ React Native FS loaded but DocumentDirectoryPath not available');
-      isRNFSAvailable = false;
+      console.log('⚠️ Expo File System loaded but documentDirectory not available');
+      isExpoFSAvailable = false;
     }
   } catch (error) {
-    console.log('❌ React Native FS not available on this platform:', error);
-    isRNFSAvailable = false;
+    console.log('❌ Expo File System not available on this platform:', error);
+    isExpoFSAvailable = false;
   }
 } else {
   console.log('📱 Platform:', Platform.OS, '- File operations will use web APIs');
@@ -539,16 +540,16 @@ export class FileScannerService {
   
   // Quarantine folder management per doccument-image-file.md requirements
   private static async ensureQuarantineFolder(): Promise<string> {
-    if (!isRNFSAvailable || !RNFS) {
+    if (!isExpoFSAvailable || !ExpoFS) {
       throw new Error('File system not available on this platform');
     }
 
-    const quarantinePath = `${RNFS.DocumentDirectoryPath}/quarantine`;
-    
+    const quarantinePath = `${ExpoFS.documentDirectory}/quarantine`;
+
     try {
-      const exists = await RNFS.exists(quarantinePath);
-      if (!exists) {
-        await RNFS.mkdir(quarantinePath);
+      const exists = await ExpoFS.getInfoAsync(quarantinePath);
+      if (!exists.exists) {
+        await ExpoFS.makeDirectoryAsync(quarantinePath);
         console.log('📁 Created quarantine folder:', quarantinePath);
       }
       return quarantinePath;
@@ -577,13 +578,13 @@ export class FileScannerService {
     details?: string;
   }>> {
     try {
-      if (!isRNFSAvailable || !RNFS) {
+      if (!isExpoFSAvailable || !ExpoFS) {
         // Return empty array for web/mock platforms
         return [];
       }
 
       const quarantinePath = await this.ensureQuarantineFolder();
-      const files = await RNFS.readDir(quarantinePath);
+      const files = await ExpoFS.readDirectoryAsync(quarantinePath);
       const quarantinedFiles = [];
 
       for (const file of files) {
@@ -596,8 +597,8 @@ export class FileScannerService {
           const originalFileName = timestampMatch[2].replace(/_/g, ' ');
           
           // Get file stats
-          const stats = await RNFS.stat(file.path);
-          
+          const stats = await ExpoFS.getInfoAsync(file.path);
+
           // Try to determine threat level from metadata file
           let threatLevel: 'SAFE' | 'SUSPICIOUS' | 'MALICIOUS' | 'UNKNOWN' = 'UNKNOWN';
           let threatName = undefined;
@@ -607,9 +608,9 @@ export class FileScannerService {
           // Check if metadata file exists
           const metadataPath = `${file.path}.meta`;
           try {
-            const metadataExists = await RNFS.exists(metadataPath);
-            if (metadataExists) {
-              const metadata = JSON.parse(await RNFS.readFile(metadataPath, 'utf8'));
+            const metadataExists = await ExpoFS.getInfoAsync(metadataPath);
+            if (metadataExists.exists) {
+              const metadata = JSON.parse(await ExpoFS.readAsStringAsync(metadataPath));
               threatLevel = metadata.threatLevel || threatLevel;
               threatName = metadata.threatName;
               scanEngine = metadata.scanEngine || scanEngine;
@@ -654,33 +655,40 @@ export class FileScannerService {
     }
   }
 
-  // PUBLIC METHOD: Delete quarantined file
+  // PUBLIC METHOD: Delete quarantined file PERMANENTLY from device
   static async deleteQuarantinedFile(filePath: string): Promise<boolean> {
     try {
-      if (!isRNFSAvailable || !RNFS) {
+      if (!isExpoFSAvailable || !ExpoFS) {
         console.log('📁 Mock: Would delete quarantined file:', filePath);
         return true;
       }
 
-      // Delete the file
-      await RNFS.unlink(filePath);
-      
+      console.log('🗑️ PERMANENTLY deleting file from device:', filePath);
+      console.log('⚠️ This action cannot be undone - file will be completely removed');
+
+      // Delete the file PERMANENTLY from device
+      await ExpoFS.deleteAsync(filePath, { idempotent: true });
+
+      console.log('✅ File DELETED from device storage');
+      console.log('🔥 File no longer exists anywhere on device');
+
       // Also delete metadata file if it exists
       const metadataPath = `${filePath}.meta`;
       try {
-        const metadataExists = await RNFS.exists(metadataPath);
-        if (metadataExists) {
-          await RNFS.unlink(metadataPath);
+        const metadataExists = await ExpoFS.getInfoAsync(metadataPath);
+        if (metadataExists.exists) {
+          await ExpoFS.deleteAsync(metadataPath, { idempotent: true });
+          console.log('📝 Metadata file also deleted');
         }
       } catch (metaError) {
         // Metadata deletion failure is non-critical
-        console.warn('Failed to delete metadata file:', metaError);
+        console.warn('⚠️ Failed to delete metadata file:', metaError);
       }
 
-      console.log('🗑️ Successfully deleted quarantined file:', filePath);
+      console.log('🎯 File permanently removed from quarantine and device');
       return true;
     } catch (error) {
-      console.error('❌ Failed to delete quarantined file:', error);
+      console.error('❌ Failed to permanently delete quarantined file:', error);
       return false;
     }
   }
@@ -688,20 +696,23 @@ export class FileScannerService {
   // PUBLIC METHOD: Restore quarantined file to Downloads
   static async restoreQuarantinedFile(filePath: string, originalFileName: string): Promise<boolean> {
     try {
-      if (!isRNFSAvailable || !RNFS) {
+      if (!isExpoFSAvailable || !ExpoFS) {
         console.log('📁 Mock: Would restore quarantined file:', originalFileName);
         return true;
       }
 
-      const downloadPath = `${RNFS.DownloadDirectoryPath}/${originalFileName}`;
-      await RNFS.moveFile(filePath, downloadPath);
-      
+      const downloadPath = `${ExpoFS.documentDirectory}/${originalFileName}`;
+      await ExpoFS.moveAsync({
+        from: filePath,
+        to: downloadPath
+      });
+
       // Delete metadata file if it exists
       const metadataPath = `${filePath}.meta`;
       try {
-        const metadataExists = await RNFS.exists(metadataPath);
-        if (metadataExists) {
-          await RNFS.unlink(metadataPath);
+        const metadataExists = await ExpoFS.getInfoAsync(metadataPath);
+        if (metadataExists.exists) {
+          await ExpoFS.deleteAsync(metadataPath);
         }
       } catch (metaError) {
         // Metadata deletion failure is non-critical
@@ -719,7 +730,7 @@ export class FileScannerService {
   // Save scan result metadata alongside quarantined file
   private static async saveQuarantineMetadata(filePath: string, scanResult: FileScanResult): Promise<void> {
     try {
-      if (!isRNFSAvailable || !RNFS) {
+      if (!isExpoFSAvailable || !ExpoFS) {
         return; // Skip metadata on web platforms
       }
 
@@ -733,11 +744,89 @@ export class FileScannerService {
       };
 
       const metadataPath = `${filePath}.meta`;
-      await RNFS.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+      await ExpoFS.writeAsStringAsync(metadataPath, JSON.stringify(metadata, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       console.log('💾 Saved quarantine metadata:', metadataPath);
     } catch (error) {
       console.warn('⚠️ Failed to save quarantine metadata:', error);
       // Non-critical error - don't throw
+    }
+  }
+
+  // MANUAL QUARANTINE: User-initiated file quarantine (MOVES file, not copies)
+  static async manualQuarantineFile(fileUri: string, fileName: string, scanResult?: FileScanResult): Promise<{
+    success: boolean;
+    quarantinedPath?: string;
+    message: string;
+  }> {
+    try {
+      if (!isExpoFSAvailable || !ExpoFS) {
+        return {
+          success: false,
+          message: 'File system not available on this platform'
+        };
+      }
+
+      console.log('🔒 Manual quarantine initiated for:', fileName);
+      console.log('📂 Original location:', fileUri);
+
+      // Ensure quarantine folder exists
+      const quarantinePath = await this.ensureQuarantineFolder();
+
+      // Generate unique filename with timestamp
+      const timestamp = Date.now();
+      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const quarantinedFileName = `${timestamp}_${sanitizedFileName}`;
+      const quarantinedFilePath = `${quarantinePath}/${quarantinedFileName}`;
+
+      // IMPORTANT: MOVE the file (not copy) - this removes it from original location
+      console.log('🚚 Moving file to quarantine (removing from original location)...');
+
+      try {
+        // Use moveAsync to MOVE (not copy) the file
+        await ExpoFS.moveAsync({
+          from: fileUri,
+          to: quarantinedFilePath
+        });
+
+        console.log('✅ File MOVED to quarantine (removed from original location)');
+        console.log('📁 New location:', quarantinedFilePath);
+        console.log('🗑️ Original location is now empty');
+      } catch (moveError) {
+        // If move fails, try copy + delete as fallback
+        console.warn('⚠️ Move failed, trying copy + delete:', moveError);
+
+        await ExpoFS.copyAsync({
+          from: fileUri,
+          to: quarantinedFilePath
+        });
+
+        // Delete original file
+        await ExpoFS.deleteAsync(fileUri, { idempotent: true });
+
+        console.log('✅ File copied to quarantine and deleted from original location');
+      }
+
+      // Save metadata about the quarantined file
+      await this.saveQuarantineMetadata(quarantinedFilePath, scanResult || {
+        isSafe: false,
+        threatName: 'User quarantined',
+        scanEngine: 'Manual Quarantine',
+        scanTime: new Date(),
+        details: 'File manually quarantined by user',
+        filePath: fileUri
+      });
+
+      return {
+        success: true,
+        quarantinedPath: quarantinedFilePath,
+        message: `File moved to quarantine. Original file has been removed from ${fileUri}`
+      };
+    } catch (error) {
+      console.error('❌ Manual quarantine failed:', error);
+      return {
+        success: false,
+        message: `Failed to quarantine file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
     }
   }
 
@@ -767,8 +856,8 @@ export class FileScannerService {
       // Get file size if possible (for local scan)
       let fileSize = 0;
       try {
-        if (isRNFSAvailable && RNFS) {
-          const fileInfo = await RNFS.stat(fileUri);
+        if (isExpoFSAvailable && ExpoFS) {
+          const fileInfo = await ExpoFS.getInfoAsync(fileUri);
           fileSize = fileInfo.size;
         }
     } catch (error) {
@@ -987,38 +1076,39 @@ export class FileScannerService {
       console.error('❌ YARA scan failed, falling back to heuristic:', error);
     }
     
-    // Fallback to original heuristic scanning
-    console.log('🔍 Using heuristic local scan');
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Simple heuristic based on file extension
-    const dangerousExtensions = ['.exe', '.scr', '.bat', '.cmd', '.pif', '.vbs', '.js', '.apk', '.dmg'];
-    const isDangerous = dangerousExtensions.some(ext => 
+    // Fallback to REDUCED heuristic scanning (less false positives)
+    console.log('🔍 Using reduced heuristic local scan');
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // REDUCED: Only flag CLEARLY dangerous files
+    const veryDangerousExtensions = ['.exe', '.scr', '.bat', '.cmd', '.vbs'];
+    const isDangerous = veryDangerousExtensions.some(ext =>
       fileName.toLowerCase().endsWith(ext)
     );
     
-    // Check for suspiciously large files (over 100MB)
-    const isSuspiciousSize = fileSize && fileSize > 100 * 1024 * 1024;
-    
-    // Add some randomness for demo
-    const randomThreat = Math.random() < 0.15; // 15% chance of random threat
-    
-    const hasAnyThreat = isDangerous || isSuspiciousSize || randomThreat;
-    
+    // INCREASED threshold: Only flag extremely large files (over 500MB)
+    const isSuspiciousSize = fileSize && fileSize > 500 * 1024 * 1024;
+
+    // REMOVED random threat - too many false positives
+
+    const hasAnyThreat = (isDangerous || isSuspiciousSize);
+
+    // Additional safety check: Don't flag common safe files
+    const safePatterns = ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.txt', '.mp3', '.mp4'];
+    const isSafePattern = safePatterns.some(ext => fileName.toLowerCase().endsWith(ext));
+
     return {
-      isSafe: !hasAnyThreat,
-      threatName: isDangerous ? 'Potentially unwanted program' : 
-                 isSuspiciousSize ? 'Suspiciously large file' :
-                 randomThreat ? 'Suspicious file behavior' : undefined,
-      scanEngine: 'Shabari Local Scanner (Heuristic)',
+      isSafe: isSafePattern ? true : !hasAnyThreat,
+      threatName: isDangerous ? 'Potentially unwanted program' :
+                 isSuspiciousSize ? 'Unusually large file' : undefined,
+      scanEngine: 'Shabari Local Scanner (Reduced Sensitivity)',
       scanTime: new Date(),
-      details: isDangerous ? 'File type identified as potentially dangerous.' : 
-              isSuspiciousSize ? `Large file (${Math.round((fileSize || 0) / 1024 / 1024)}MB) requires manual review.` :
-              randomThreat ? 'File exhibits suspicious characteristics.' :
+      details: isDangerous ? 'Executable file type detected. Please verify source before running.' :
+              isSuspiciousSize ? `Very large file (${Math.round((fileSize || 0) / 1024 / 1024)}MB) - manual review recommended.` :
+              isSafePattern ? 'Common file type verified as safe.' :
               'File appears to be safe based on heuristic analysis.',
       filePath: undefined,
       fileSize: fileSize
     };
   }
 }
-

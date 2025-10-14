@@ -1,0 +1,4 @@
+# ninja log v5
+2	2050	7820778258210941	CMakeFiles/yara-engine.dir/yara-engine.cpp.o	75c6ebbd69915383
+23	3987	7820778277539108	CMakeFiles/yara-engine.dir/yara-implementation.cpp.o	a74322d45facbfe1
+3988	4399	7820778281631063	C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/build/intermediates/cxx/RelWithDebInfo/2t281x2q/obj/armeabi-v7a/libyara-engine.so	71ffc6709673aa

@@ -14,7 +14,7 @@ interface SubscriptionState {
 export const useSubscriptionStore = create<SubscriptionState>()(
   persist(
     (set, get) => ({
-      isPremium: true, // Default to premium for core security features
+      isPremium: false, // Set to false for production - users start with free tier
       subscriptionExpiresAt: null,
       isLoading: false,
       error: null,
@@ -161,4 +161,3 @@ if (typeof window !== 'undefined') {
     syncFromDatabase: () => useSubscriptionStore.getState().checkSubscriptionStatus(),
   };
 }
-

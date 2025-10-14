@@ -1,0 +1,60 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-RelWithDebInfo-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.6.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "yara-engine",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "yara-engine::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-yara-engine-RelWithDebInfo-c302e7f8144d2d0b9610.json",
+					"name" : "yara-engine",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/.cxx/RelWithDebInfo/2t281x2q/arm64-v8a",
+		"source" : "C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/src/main/cpp"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

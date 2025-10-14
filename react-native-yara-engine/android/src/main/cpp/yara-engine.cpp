@@ -24,7 +24,7 @@ class MutexGuard {
 private:
     pthread_mutex_t* mutex_;
     bool locked_;
-
+    
 public:
     explicit MutexGuard(pthread_mutex_t* mutex) : mutex_(mutex), locked_(false) {
         if (pthread_mutex_lock(mutex_) == 0) {
@@ -33,15 +33,15 @@ public:
             LOGE("Failed to acquire mutex lock");
         }
     }
-
+    
     ~MutexGuard() {
         if (locked_) {
             pthread_mutex_unlock(mutex_);
         }
     }
-
+    
     bool isLocked() const { return locked_; }
-
+    
     // Prevent copy
     MutexGuard(const MutexGuard&) = delete;
     MutexGuard& operator=(const MutexGuard&) = delete;
@@ -55,7 +55,7 @@ struct ScanResultData {
 };
 
 // SECURITY: Helper function to create YaraScanResult object with proper cleanup
-jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
+jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName, 
                         const char* category, const char* severity, 
                         jobjectArray matchedRules, const char* details) {
     
@@ -91,7 +91,7 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
     if (setSafeMethod) {
         env->CallVoidMethod(scanResult, setSafeMethod, isSafe);
     }
-
+    
     if (setThreatNameMethod && threatName) {
         jstring jThreatName = env->NewStringUTF(threatName);
         if (jThreatName) {
@@ -99,7 +99,7 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
             env->DeleteLocalRef(jThreatName); // SECURITY: ALWAYS CLEANUP!
         }
     }
-
+    
     if (setThreatCategoryMethod && category) {
         jstring jCategory = env->NewStringUTF(category);
         if (jCategory) {
@@ -107,7 +107,7 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
             env->DeleteLocalRef(jCategory); // SECURITY: ALWAYS CLEANUP!
         }
     }
-
+    
     if (setSeverityMethod && severity) {
         jstring jSeverity = env->NewStringUTF(severity);
         if (jSeverity) {
@@ -115,7 +115,7 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
             env->DeleteLocalRef(jSeverity); // SECURITY: ALWAYS CLEANUP!
         }
     }
-
+    
     if (setDetailsMethod && details) {
         jstring jDetails = env->NewStringUTF(details);
         if (jDetails) {
@@ -123,7 +123,7 @@ jobject createScanResult(JNIEnv* env, bool isSafe, const char* threatName,
             env->DeleteLocalRef(jDetails); // SECURITY: ALWAYS CLEANUP!
         }
     }
-
+    
     if (setScanEngineMethod) {
         jstring jEngine = env->NewStringUTF("Shabari YARA v4.5.0");
         if (jEngine) {
@@ -159,12 +159,12 @@ extern "C" {
 JNIEXPORT jboolean JNICALL
 Java_com_shabari_yara_YaraEngine_nativeInitialize(JNIEnv* env, jobject thiz) {
     MutexGuard guard(&g_mutex); // SECURITY: Automatically unlocks on return/exception
-
+    
     if (!guard.isLocked()) {
         LOGE("Failed to acquire mutex");
         return JNI_FALSE;
     }
-
+    
     if (g_initialized) {
         LOGD("YARA engine already initialized");
         return JNI_TRUE;
@@ -191,12 +191,12 @@ Java_com_shabari_yara_YaraEngine_nativeInitialize(JNIEnv* env, jobject thiz) {
 JNIEXPORT jboolean JNICALL
 Java_com_shabari_yara_YaraEngine_nativeLoadRules(JNIEnv* env, jobject thiz, jstring rulesContent) {
     MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
-
+    
     if (!guard.isLocked()) {
         LOGE("Failed to acquire mutex");
         return JNI_FALSE;
     }
-
+    
     if (!g_initialized || !g_compiler) {
         LOGE("YARA engine not initialized");
         return JNI_FALSE;
@@ -236,23 +236,23 @@ Java_com_shabari_yara_YaraEngine_nativeLoadRules(JNIEnv* env, jobject thiz, jstr
 JNIEXPORT jobject JNICALL
 Java_com_shabari_yara_YaraEngine_nativeScanFile(JNIEnv* env, jobject thiz, jstring filePath) {
     MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
-
+    
     if (!guard.isLocked()) {
         LOGE("Failed to acquire mutex");
-        return createScanResult(env, false, "Mutex Error", "error", "high", NULL,
+        return createScanResult(env, false, "Mutex Error", "error", "high", NULL, 
                                "Failed to acquire thread lock");
     }
-
+    
     if (!g_initialized || !g_rules) {
         LOGE("YARA engine not initialized or no rules loaded");
-        return createScanResult(env, false, "Engine Error", "error", "high", NULL,
+        return createScanResult(env, false, "Engine Error", "error", "high", NULL, 
                                "YARA engine not properly initialized");
     }
 
     const char* path = env->GetStringUTFChars(filePath, NULL);
     if (!path) {
         LOGE("Failed to get file path");
-        return createScanResult(env, false, "Path Error", "error", "medium", NULL,
+        return createScanResult(env, false, "Path Error", "error", "medium", NULL, 
                                "Invalid file path provided");
     }
 
@@ -303,16 +303,16 @@ Java_com_shabari_yara_YaraEngine_nativeScanFile(JNIEnv* env, jobject thiz, jstri
 JNIEXPORT jobject JNICALL
 Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jbyteArray data) {
     MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
-
+    
     if (!guard.isLocked()) {
         LOGE("Failed to acquire mutex");
-        return createScanResult(env, false, "Mutex Error", "error", "high", NULL,
+        return createScanResult(env, false, "Mutex Error", "error", "high", NULL, 
                                "Failed to acquire thread lock");
     }
-
+    
     if (!g_initialized || !g_rules) {
         LOGE("YARA engine not initialized or no rules loaded");
-        return createScanResult(env, false, "Engine Error", "error", "high", NULL,
+        return createScanResult(env, false, "Engine Error", "error", "high", NULL, 
                                "YARA engine not properly initialized");
     }
 
@@ -321,7 +321,7 @@ Java_com_shabari_yara_YaraEngine_nativeScanMemory(JNIEnv* env, jobject thiz, jby
     
     if (!buffer) {
         LOGE("Failed to get buffer data");
-        return createScanResult(env, false, "Data Error", "error", "medium", NULL,
+        return createScanResult(env, false, "Data Error", "error", "medium", NULL, 
                                "Invalid memory data provided");
     }
 
@@ -394,12 +394,12 @@ Java_com_shabari_yara_YaraEngine_nativeGetLoadedRulesCount(JNIEnv* env, jobject 
 JNIEXPORT void JNICALL
 Java_com_shabari_yara_YaraEngine_nativeCleanup(JNIEnv* env, jobject thiz) {
     MutexGuard guard(&g_mutex); // SECURITY: Automatic cleanup
-
+    
     if (!guard.isLocked()) {
         LOGE("Failed to acquire mutex for cleanup");
         return;
     }
-
+    
     if (g_rules) {
         yr_rules_destroy(g_rules);
         g_rules = NULL;
@@ -419,4 +419,3 @@ Java_com_shabari_yara_YaraEngine_nativeCleanup(JNIEnv* env, jobject thiz) {
 }
 
 } // extern "C"
-

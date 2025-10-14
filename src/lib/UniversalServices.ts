@@ -18,7 +18,6 @@ export const BuildEnvironment = {
 
 // ===== FILE SYSTEM SERVICE =====
 class UniversalFileSystem {
-  private rnfs: any = null;
   private expoFS: any = null;
   private available: boolean = false;
 
@@ -26,29 +25,19 @@ class UniversalFileSystem {
     this.initializeFileSystem();
   }
 
-  private async initializeFileSystem() {
+  private initializeFileSystem() {
     try {
-      // Try react-native-fs first (more features)
-      this.rnfs = require('react-native-fs');
+      // Use expo-file-system (compatible with Expo)
+      this.expoFS = require('expo-file-system');
       this.available = true;
-      console.log('[UniversalFS] Using react-native-fs');
+      console.log('[UniversalFS] Using expo-file-system');
     } catch (error) {
-      try {
-        // Fallback to expo-file-system
-        this.expoFS = require('expo-file-system');
-        this.available = true;
-        console.log('[UniversalFS] Using expo-file-system');
-      } catch (fallbackError) {
-        console.warn('[UniversalFS] No file system available');
-        this.available = false;
-      }
+      console.warn('[UniversalFS] No file system available:', error);
+      this.available = false;
     }
   }
 
   get DocumentDirectoryPath(): string {
-    if (this.rnfs) {
-      return this.rnfs.DocumentDirectoryPath;
-    }
     if (this.expoFS) {
       return this.expoFS.documentDirectory || '';
     }
@@ -56,9 +45,6 @@ class UniversalFileSystem {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    if (this.rnfs) {
-      return this.rnfs.writeFile(path, content, 'utf8');
-    }
     if (this.expoFS) {
       return this.expoFS.writeAsStringAsync(path, content);
     }
@@ -66,9 +52,6 @@ class UniversalFileSystem {
   }
 
   async readFile(path: string): Promise<string> {
-    if (this.rnfs) {
-      return this.rnfs.readFile(path, 'utf8');
-    }
     if (this.expoFS) {
       return this.expoFS.readAsStringAsync(path);
     }
@@ -77,9 +60,6 @@ class UniversalFileSystem {
   }
 
   async exists(path: string): Promise<boolean> {
-    if (this.rnfs) {
-      return this.rnfs.exists(path);
-    }
     if (this.expoFS) {
       const info = await this.expoFS.getInfoAsync(path);
       return info.exists;
@@ -88,9 +68,6 @@ class UniversalFileSystem {
   }
 
   async mkdir(path: string): Promise<void> {
-    if (this.rnfs) {
-      return this.rnfs.mkdir(path);
-    }
     if (this.expoFS) {
       return this.expoFS.makeDirectoryAsync(path, { intermediates: true });
     }
@@ -338,4 +315,4 @@ export const ServiceStatus = {
 };
 
 // Initialize and log status
-ServiceStatus.logServiceStatus(); 
+ServiceStatus.logServiceStatus();

@@ -12,9 +12,8 @@ version: "1.0"
 profile:
   name: qodana.starter
 
-#Specify Qodana linter for analysis (Applied in CI/CD pipeline)
-# Using JS linter for React Native/TypeScript project
-linter: jetbrains/qodana-js:2025.2
+# Use Community linter for JS/TS projects to avoid Cloud token requirement
+linter: jetbrains/qodana-js-community:2025.2
 
 # Exclude paths that don't need analysis
 exclude:

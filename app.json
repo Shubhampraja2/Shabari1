@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Shabari",
+    "slug": "shabari",
+    "version": "1.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "shabari",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shabari.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.shabari.app",
+      "permissions": [
+        "RECEIVE_SMS",
+        "READ_SMS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "SYSTEM_ALERT_WINDOW",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "owner": "shubham485"
+  }
+}

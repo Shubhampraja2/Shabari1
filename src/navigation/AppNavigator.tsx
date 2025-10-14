@@ -14,7 +14,7 @@ import { ManualSMSScannerScreen } from '../screens/ManualSMSScannerScreen';
 import MessageAnalysisScreen from '../screens/MessageAnalysisScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import { ProxyEngineTestScreen } from '../screens/ProxyEngineTestScreen';
-import { QuarantineScreen } from '../screens/QuarantineScreen';
+import { AdvancedQuarantineScreen } from '../screens/AdvancedQuarantineScreen';
 import { ReportNumberScreen } from '../screens/ReportNumberScreen';
 import ScanResultScreen from '../screens/ScanResultScreen';
 import SecureBrowserScreen from '../screens/SecureBrowserScreen';
@@ -23,6 +23,7 @@ import SMSScannerScreen from '../screens/SMSScannerScreen';
 import { ThreatDetectionScreen } from '../screens/ThreatDetectionScreen';
 import { ThreatDetectionSettingsScreen } from '../screens/ThreatDetectionSettingsScreen';
 import { VPNControlScreen } from '../screens/VPNControlScreen';
+import EnhancedAdBlockerScreen from '../screens/EnhancedAdBlockerScreen';
 
 // Stores
 import { initializeAuthListener, useAuthStore } from '../stores/authStore';
@@ -294,7 +295,7 @@ const AppNavigator: React.FC = () => {
           </Stack.Screen>
           <Stack.Screen name="Quarantine">
             {(props) => (
-              <QuarantineScreen />
+              <AdvancedQuarantineScreen />
             )}
           </Stack.Screen>
           <Stack.Screen name="Admin">
@@ -335,6 +336,11 @@ const AppNavigator: React.FC = () => {
                   props.navigation.navigate('Quarantine');
                 }}
               />
+            )}
+          </Stack.Screen>
+          <Stack.Screen name="EnhancedAdBlocker">
+            {(props) => (
+              <EnhancedAdBlockerScreen />
             )}
           </Stack.Screen>
         </>

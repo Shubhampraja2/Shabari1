@@ -1,0 +1,12 @@
+[
+{
+  "directory": "C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/.cxx/RelWithDebInfo/2t281x2q/arm64-v8a",
+  "command": "C:\\Users\\SHUBHA~1\\AppData\\Local\\Android\\Sdk\\ndk\\261~1.109\\TOOLCH~1\\llvm\\prebuilt\\WINDOW~1\\bin\\CLANG_~1.EXE --target=aarch64-none-linux-android21 --sysroot=\"C:/Users/Shubham prajapati/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/sysroot\" -DANDROID -DYARA_SELF_CONTAINED -Dyara_engine_EXPORTS -I\"C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/src/main/cpp\" -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -frtti -fexceptions -O2 -g -DNDEBUG -fPIC -fPIC -fvisibility=hidden -frtti -fexceptions -std=gnu++17 -o CMakeFiles\\yara-engine.dir\\yara-engine.cpp.o -c \"C:\\Users\\Shubham prajapati\\Downloads\\Shabari-App-Final\\Shabari\\react-native-yara-engine\\android\\src\\main\\cpp\\yara-engine.cpp\"",
+  "file": "C:\\Users\\Shubham prajapati\\Downloads\\Shabari-App-Final\\Shabari\\react-native-yara-engine\\android\\src\\main\\cpp\\yara-engine.cpp"
+},
+{
+  "directory": "C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/.cxx/RelWithDebInfo/2t281x2q/arm64-v8a",
+  "command": "C:\\Users\\SHUBHA~1\\AppData\\Local\\Android\\Sdk\\ndk\\261~1.109\\TOOLCH~1\\llvm\\prebuilt\\WINDOW~1\\bin\\CLANG_~1.EXE --target=aarch64-none-linux-android21 --sysroot=\"C:/Users/Shubham prajapati/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/sysroot\" -DANDROID -DYARA_SELF_CONTAINED -Dyara_engine_EXPORTS -I\"C:/Users/Shubham prajapati/Downloads/Shabari-App-Final/Shabari/react-native-yara-engine/android/src/main/cpp\" -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -frtti -fexceptions -O2 -g -DNDEBUG -fPIC -fPIC -fvisibility=hidden -frtti -fexceptions -std=gnu++17 -o CMakeFiles\\yara-engine.dir\\yara-implementation.cpp.o -c \"C:\\Users\\Shubham prajapati\\Downloads\\Shabari-App-Final\\Shabari\\react-native-yara-engine\\android\\src\\main\\cpp\\yara-implementation.cpp\"",
+  "file": "C:\\Users\\Shubham prajapati\\Downloads\\Shabari-App-Final\\Shabari\\react-native-yara-engine\\android\\src\\main\\cpp\\yara-implementation.cpp"
+}
+]

@@ -819,6 +819,20 @@ const DashboardScreen = ({
             <Text style={styles.actionTitle}>VPN Control</Text>
             <Text style={styles.actionSubtitle}>{isPremium ? 'Start/stop & configure' : 'Premium only'}</Text>
           </TouchableOpacity>
+
+          {/* NEW: Ad Blocker Access - Added for user-controlled ad blocking */}
+          <TouchableOpacity 
+            style={styles.actionCard}
+            onPress={() => {
+              console.log('🚫 Opening Ad Blocker');
+              Sentry.addBreadcrumb({ message: 'Ad Blocker navigation initiated' });
+              navigation.navigate('EnhancedAdBlocker');
+            }}
+          >
+            <MaterialCommunityIcons name="shield-off" size={32} color="#F44336" />
+            <Text style={styles.actionTitle}>Ad Blocker</Text>
+            <Text style={styles.actionSubtitle}>Block unwanted ads</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Phase 2: Advanced Features Section */}

@@ -641,100 +641,99 @@ export const AdvancedQuarantineScreen = () => {
     <SafeAreaView style={styles.container}>
       <Header title="🔒 Advanced Quarantine" showBack={true} />
       
-      {/* Security Dashboard */}
-      {renderSecurityDashboard()}
-      
-      {/* Search and Filter Bar */}
-      <View style={styles.searchBar}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search files..."
-          placeholderTextColor="#6b7280"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoryFilter}
-        >
-          {['all', 'malware', 'suspicious', 'personal', 'temporary'].map(category => (
-            <TouchableOpacity
-              key={category}
-              style={[
-                styles.categoryChip,
-                selectedCategory === category && styles.categoryChipActive
-              ]}
-              onPress={() => setSelectedCategory(category)}
-            >
-              <Text style={[
-                styles.categoryChipText,
-                selectedCategory === category && styles.categoryChipTextActive
-              ]}>
-                {category.charAt(0).toUpperCase() + category.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-      
-      {/* Action Buttons */}
-      <View style={styles.actionBar}>
-        <TouchableOpacity 
-          style={styles.primaryActionButton} 
-          onPress={manualQuarantine}
-        >
-          <Text style={styles.primaryActionText}>+ Add File</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.iconButton} 
-          onPress={() => setShowAuditLog(true)}
-        >
-          <Text style={styles.iconButtonText}>📋</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.iconButton} 
-          onPress={() => setShowSettings(true)}
-        >
-          <Text style={styles.iconButtonText}>⚙️</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* File List */}
-      {filteredFiles.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>🔒</Text>
-          <Text style={styles.emptyTitle}>Quarantine Vault Empty</Text>
-          <Text style={styles.emptyDescription}>
-            Your secure quarantine vault is currently empty.
-            {'\n'}Add files manually or enable auto-quarantine for suspicious files.
-          </Text>
-          <TouchableOpacity 
-            style={styles.addFileButton}
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Security Dashboard */}
+        {renderSecurityDashboard()}
+
+        {/* Search and Filter Bar */}
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search files..."
+            placeholderTextColor="#6b7280"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryFilter}
+          >
+            {['all', 'malware', 'suspicious', 'personal', 'temporary'].map(category => (
+              <TouchableOpacity
+                key={category}
+                style={[
+                  styles.categoryChip,
+                  selectedCategory === category && styles.categoryChipActive
+                ]}
+                onPress={() => setSelectedCategory(category)}
+              >
+                <Text style={[
+                  styles.categoryChipText,
+                  selectedCategory === category && styles.categoryChipTextActive
+                ]}>
+                  {category.charAt(0).toUpperCase() + category.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionBar}>
+          <TouchableOpacity
+            style={styles.primaryActionButton}
             onPress={manualQuarantine}
           >
-            <Text style={styles.addFileButtonText}>Add Your First File</Text>
+            <Text style={styles.primaryActionText}>+ Add File</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setShowAuditLog(true)}
+          >
+            <Text style={styles.iconButtonText}>📋</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setShowSettings(true)}
+          >
+            <Text style={styles.iconButtonText}>⚙️</Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={filteredFiles}
-          keyExtractor={(item) => item.id}
-          renderItem={renderFileItem}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#3b82f6"
-              colors={['#3b82f6']}
-            />
-          }
-          contentContainerStyle={styles.fileList}
-        />
-      )}
+
+        {/* File List */}
+        {filteredFiles.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>🔒</Text>
+            <Text style={styles.emptyTitle}>Quarantine Vault Empty</Text>
+            <Text style={styles.emptyDescription}>
+              Your secure quarantine vault is currently empty.
+              {'\n'}Add files manually or enable auto-quarantine for suspicious files.
+            </Text>
+            <TouchableOpacity
+              style={styles.addFileButton}
+              onPress={manualQuarantine}
+            >
+              <Text style={styles.addFileButtonText}>Add Your First File</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.fileListContainer}>
+            {filteredFiles.map((file) => (
+              <View key={file.id}>
+                {renderFileItem({ item: file })}
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -996,6 +995,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 32,
   },
 });
 

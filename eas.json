@@ -1,7 +1,8 @@
 {
   "cli": {
     "version": ">= 3.13.3",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "requireCommit": false
   },
   "build": {
     "development": {
@@ -63,6 +64,7 @@
         "gradleCommand": ":app:assembleRelease",
         "image": "latest",
         "node": "20.19.4",
+        "resourceClass": "medium",
         "cache": {
           "disabled": true
         },
@@ -74,7 +76,9 @@
           "GRADLE_OPTS": "-Xmx6g -XX:MaxMetaspaceSize=1g",
           "JAVA_OPTS": "-Xmx6g",
           "EAS_SKIP_AUTO_FINGERPRINT": "1"
-        }
+        },
+        "autoIncrement": false,
+        "withoutCredentials": false
       }
     },
     "production-fixed": {
@@ -90,8 +94,7 @@
           "NODE_ENV": "production",
           "EXPO_PUBLIC_ENVIRONMENT": "production",
           "GRADLE_OPTS": "-Xmx6g -XX:MaxMetaspaceSize=1g",
-          "JAVA_OPTS": "-Xmx6g",
-          "EAS_SKIP_AUTO_FINGERPRINT": "1"
+          "JAVA_OPTS": "-Xmx6g"
         }
       }
     }

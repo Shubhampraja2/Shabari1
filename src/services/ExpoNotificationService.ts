@@ -27,6 +27,7 @@ export interface NotificationData {
   color?: string;
   autoCancel?: boolean;
   ongoing?: boolean;
+  categoryIdentifier?: string; // For action buttons
 }
 
 export interface ScheduledNotificationData extends NotificationData {
@@ -66,6 +67,7 @@ export class ExpoNotificationService {
       // Set up Android notification channel
       if (Platform.OS === 'android') {
         await this.createNotificationChannels();
+        await this.createNotificationCategories();
       }
 
       // Set up notification listeners
@@ -157,10 +159,69 @@ export class ExpoNotificationService {
         showBadge: true,
       });
 
+      // Ad Detection channel - NEW
+      await Notifications.setNotificationChannelAsync('ad_detection', {
+        name: 'Ad Detection',
+        description: 'Detected advertisement notifications with blocking options',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 200, 200, 200],
+        lightColor: '#FF6B35',
+        enableVibrate: true,
+        enableLights: true,
+        showBadge: true,
+      });
+
       console.log('✅ Android notification channels created');
 
     } catch (error) {
       console.error('❌ Error creating notification channels:', error);
+    }
+  }
+
+  /**
+   * Create notification categories with action buttons
+   */
+  async createNotificationCategories(): Promise<void> {
+    try {
+      // Ad detection category with block/allow actions
+      await Notifications.setNotificationCategoryAsync('ad_detected', [
+        {
+          identifier: 'block_ad',
+          buttonTitle: '🚫 Block This Ad',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+        {
+          identifier: 'allow_ad',
+          buttonTitle: '✅ Allow',
+          options: {
+            opensAppToForeground: false,
+          },
+        },
+        {
+          identifier: 'view_details',
+          buttonTitle: '📊 View Details',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+      ]);
+
+      // Blocked ad category with unblock action
+      await Notifications.setNotificationCategoryAsync('ad_blocked', [
+        {
+          identifier: 'view_blocked',
+          buttonTitle: '📋 View Blocked Ads',
+          options: {
+            opensAppToForeground: true,
+          },
+        },
+      ]);
+
+      console.log('✅ Notification categories created with action buttons');
+    } catch (error) {
+      console.error('❌ Error creating notification categories:', error);
     }
   }
 
@@ -185,11 +246,30 @@ export class ExpoNotificationService {
   /**
    * Handle notification tap/interaction
    */
-  private handleNotificationResponse(response: Notifications.NotificationResponse): void {
-    const { notification } = response;
+  private async handleNotificationResponse(response: Notifications.NotificationResponse): Promise<void> {
+    const { notification, actionIdentifier } = response;
     const data = notification.request.content.data;
 
-    console.log('📱 Processing notification response:', data);
+    console.log('📱 Processing notification response:', { actionIdentifier, data });
+
+    // Handle action button taps
+    if (actionIdentifier === 'block_ad' && data?.adDomain) {
+      console.log('🚫 User tapped Block Ad button for domain:', data.adDomain);
+      await this.handleBlockAdAction(data.adDomain, data.adUrl, data.reason);
+      return;
+    }
+
+    if (actionIdentifier === 'allow_ad' && data?.adDomain) {
+      console.log('✅ User tapped Allow button for domain:', data.adDomain);
+      await this.handleAllowAdAction(data.adDomain);
+      return;
+    }
+
+    if (actionIdentifier === 'view_details' || actionIdentifier === 'view_blocked') {
+      console.log('📊 User tapped View Details/Blocked Ads button');
+      // This will be handled by navigation in the app
+      return;
+    }
 
     // Handle different notification types
     if (data?.type === 'security_alert') {
@@ -198,10 +278,135 @@ export class ExpoNotificationService {
     } else if (data?.type === 'url_protection') {
       // Navigate to scan results
       console.log('🛡️ URL protection alert tapped');
+    } else if (data?.type === 'ad_detected') {
+      console.log('📢 Ad detection notification tapped');
     } else if (data?.url) {
       // Handle URL notifications
       console.log('🔗 URL notification:', data.url);
     }
+  }
+
+  /**
+   * Handle block ad action from notification
+   */
+  private async handleBlockAdAction(domain: string, url: string, reason: string): Promise<void> {
+    try {
+      // Import dynamically to avoid circular dependencies
+      const { userAdBlockerService } = await import('./UserAdBlockerService');
+      await userAdBlockerService.initialize();
+
+      const success = await userAdBlockerService.blockDomain(domain, reason || 'Blocked from notification');
+
+      if (success) {
+        // Show confirmation notification
+        await this.showNotification({
+          title: '✅ Ad Blocked',
+          message: `Domain "${domain}" has been blocked successfully`,
+          channelId: 'ad_detection',
+          priority: 'default',
+          data: {
+            type: 'ad_blocked',
+            domain,
+          },
+          categoryIdentifier: 'ad_blocked',
+        });
+        console.log('✅ Ad domain blocked from notification:', domain);
+      } else {
+        console.error('❌ Failed to block ad domain:', domain);
+      }
+    } catch (error) {
+      console.error('❌ Error handling block ad action:', error);
+    }
+  }
+
+  /**
+   * Handle allow ad action from notification
+   */
+  private async handleAllowAdAction(domain: string): Promise<void> {
+    try {
+      console.log('✅ User allowed ad from domain:', domain);
+      // Just dismiss the notification - no action needed
+      // Could optionally add domain to whitelist in the future
+    } catch (error) {
+      console.error('❌ Error handling allow ad action:', error);
+    }
+  }
+
+  /**
+   * Show ad detection notification with block button
+   */
+  async showAdDetectionNotification(adData: {
+    domain: string;
+    url: string;
+    reason?: string;
+    isBlocked?: boolean;
+  }): Promise<string | null> {
+    if (!this.isInitialized) {
+      console.warn('⚠️ Notification service not initialized');
+      return null;
+    }
+
+    // Check if ad notifications are enabled in settings
+    try {
+      const { userAdBlockerService } = await import('./UserAdBlockerService');
+      const settings = userAdBlockerService.getSettings();
+
+      if (!settings.showAdNotifications) {
+        console.log('🔕 Ad notifications disabled by user - skipping notification');
+        return null;
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not check ad notification preferences:', error);
+    }
+
+    // Check if general notifications are enabled
+    try {
+      const { useFeaturePermissionStore } = await import('../stores/featurePermissionStore');
+      const { getFeatureStatus } = useFeaturePermissionStore.getState();
+      const notificationStatus = getFeatureStatus('advanced_notifications');
+
+      if (!notificationStatus.isEnabled) {
+        console.log('🔕 Notifications disabled by user - skipping notification');
+        return null;
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not check notification preferences:', error);
+    }
+
+    const { domain, url, reason, isBlocked } = adData;
+
+    // If already blocked, show different notification
+    if (isBlocked) {
+      return await this.showNotification({
+        title: '🚫 Ad Blocked',
+        message: `Ad from "${domain}" was automatically blocked`,
+        channelId: 'ad_detection',
+        priority: 'default',
+        data: {
+          type: 'ad_blocked',
+          adDomain: domain,
+          adUrl: url,
+        },
+        categoryIdentifier: 'ad_blocked',
+      });
+    }
+
+    // Show ad detection notification with action buttons
+    return await this.showNotification({
+      title: '📢 Advertisement Detected',
+      message: `Ad detected from "${domain}". Would you like to block it?`,
+      channelId: 'ad_detection',
+      priority: 'high',
+      data: {
+        type: 'ad_detected',
+        adDomain: domain,
+        adUrl: url,
+        reason: reason || 'Advertisement detected',
+      },
+      categoryIdentifier: 'ad_detected',
+      sound: true,
+      vibration: true,
+    });
   }
 
   /**
@@ -236,6 +441,7 @@ export class ExpoNotificationService {
           sound: notificationData.sound !== false,
           vibrate: notificationData.vibration !== false ? [0, 250, 250, 250] : undefined,
           priority: this.mapPriority(notificationData.priority),
+          categoryIdentifier: notificationData.categoryIdentifier, // ✅ FIX: Add category for action buttons
         },
         trigger: null, // Show immediately
       });
@@ -244,7 +450,7 @@ export class ExpoNotificationService {
       return notificationId;
 
     } catch (error) {
-      console.error('❌ Error showing notification:', error);
+      console.error('❌ Failed to schedule notification:', error);
       return null;
     }
   }
@@ -428,4 +634,4 @@ export class ExpoNotificationService {
 }
 
 // Export singleton instance
-export const notificationService = ExpoNotificationService.getInstance(); 
+export const notificationService = ExpoNotificationService.getInstance();

@@ -13,14 +13,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import DeepScanService, {
+// Import Enhanced Deep Scan Service (with recursive scanning and auto-quarantine)
+import EnhancedDeepScanService, {
   DeepScanConfig,
   DeepScanProgress,
   DeepScanResult,
   DeepScanThreat,
-} from '../services/DeepScanService';
-// Import Enhanced Deep Scan Service
-import EnhancedDeepScanService from '../services/EnhancedDeepScanService';
+} from '../services/EnhancedDeepScanService';
 import QuarantineService from '../services/QuarantineService';
 
 // ==============================================================================
@@ -53,7 +52,7 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
     return () => {
       // Cleanup: Cancel scan if user navigates away
       if (isScanning) {
-        DeepScanService.cancelScan();
+        EnhancedDeepScanService.cancelScan();
       }
     };
   }, []);
@@ -107,6 +106,10 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
       scanApkFiles: true,
       enableYaraEngine: true,
       maxFileSize: 50 * 1024 * 1024, // 50MB for quick scan
+      recursiveScan: true, // Enable recursive scanning
+      maxDepth: 3, // Quick scan: 3 levels deep
+      autoQuarantine: true, // Auto-quarantine threats
+      quarantineCriticalThreats: true,
     };
 
     await performScan(config, 'Quick Scan');
@@ -121,6 +124,10 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
       scanApkFiles: true,
       enableYaraEngine: true,
       maxFileSize: 100 * 1024 * 1024, // 100MB for full scan
+      recursiveScan: true, // Enable recursive scanning
+      maxDepth: 5, // Full scan: 5 levels deep
+      autoQuarantine: true, // Auto-quarantine threats
+      quarantineCriticalThreats: true,
     };
 
     await performScan(config, 'Full Deep Scan');
@@ -128,14 +135,14 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
 
   const performScan = async (config: Partial<DeepScanConfig>, scanType: string) => {
     try {
-      console.log(`🔍 Starting ${scanType}...`);
+      console.log(`🔍 Starting ${scanType} with ENHANCED Deep Scan Service...`);
       Sentry.addBreadcrumb({ message: `${scanType} initiated`, data: { config } });
 
       setIsScanning(true);
       setScanProgress(null);
       setScanResult(null);
 
-      const result = await DeepScanService.performDeepScan(config, (progress) => {
+      const result = await EnhancedDeepScanService.performDeepScan(config, (progress) => {
         setScanProgress(progress);
       });
 
@@ -145,6 +152,8 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
       console.log(`✅ ${scanType} completed:`, {
         filesScanned: result.totalFilesScanned,
         threatsFound: result.threatsDetected.length,
+        quarantined: result.quarantinedCount,
+        maxDepth: result.maxDepthReached,
         duration: `${(result.scanDuration / 1000).toFixed(2)}s`,
       });
 
@@ -207,17 +216,17 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
 
   const handleDeleteThreat = (threat: DeepScanThreat) => {
     Alert.alert(
-      '⚠️ Delete Threat?',
-      `Are you sure you want to delete this file?\n\n${threat.fileName}\n\nThis action cannot be undone.`,
+      '⚠️ Delete Threat Permanently?',
+      `This will PERMANENTLY DELETE the file from your device:\n\n${threat.fileName}\n\n⚠️ This action CANNOT be undone!\n\nThe file will be completely removed from your device.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete Permanently',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ Attempting to delete threat file:', threat.fileName);
-              
+              console.log('🗑️ Attempting to permanently delete threat file:', threat.fileName);
+
               // Import FileSystem dynamically to avoid crashes in development
               let FileSystem: any = null;
               try {
@@ -231,15 +240,23 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
               // Check if file exists
               const fileInfo = await FileSystem.getInfoAsync(threat.filePath);
               if (!fileInfo.exists) {
-                Alert.alert('❌ File Not Found', 'The file has already been deleted or moved.');
+                Alert.alert('ℹ️ File Already Removed', 'The file has already been deleted or moved.');
+                // Still remove from UI
+                if (scanResult) {
+                  const updatedThreats = scanResult.threatsDetected.filter(t => t.id !== threat.id);
+                  setScanResult({
+                    ...scanResult,
+                    threatsDetected: updatedThreats
+                  });
+                }
                 return;
               }
 
-              // Delete the file
+              // Delete the file PERMANENTLY from device
               await FileSystem.deleteAsync(threat.filePath, { idempotent: true });
               
-              console.log('✅ Threat file deleted successfully:', threat.fileName);
-              
+              console.log('✅ Threat file PERMANENTLY deleted from device:', threat.fileName);
+
               // Remove from scan results
               if (scanResult) {
                 const updatedThreats = scanResult.threatsDetected.filter(t => t.id !== threat.id);
@@ -249,8 +266,11 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
                 });
               }
 
-              Alert.alert('✅ Success', `Threat file "${threat.fileName}" has been deleted successfully.`);
-              
+              Alert.alert(
+                '✅ Permanently Deleted',
+                `"${threat.fileName}" has been permanently removed from your device.`
+              );
+
             } catch (error) {
               console.error('❌ Error deleting threat file:', error);
               Alert.alert('❌ Error', `Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -268,7 +288,7 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
 
     Alert.alert(
       '🔒 Quarantine All Threats?',
-      `Move all ${scanResult.threatsDetected.length} threat(s) to quarantine?\n\nThis will isolate all detected threats in a secure location.`,
+      `This will move all ${scanResult.threatsDetected.length} threat(s) to quarantine.\n\n✅ Files will be REMOVED from their current location\n✅ Files will be stored securely in quarantine folder\n✅ You can delete them permanently later from Quarantine`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -299,7 +319,7 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
 
                   if (result.success) {
                     successCount++;
-                    console.log(`✅ Quarantined: ${threat.fileName}`);
+                    console.log(`✅ Quarantined and removed from device: ${threat.fileName}`);
                   } else {
                     console.error(`❌ Error quarantining ${threat.fileName}: ${result.error}`);
                     errorCount++;
@@ -321,13 +341,13 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
               if (errorCount === 0) {
                 Alert.alert(
                   '✅ All Threats Quarantined!',
-                  `Successfully quarantined all ${successCount} threat(s).\n\nYou can manage quarantined files in the Quarantine section.`,
+                  `Successfully quarantined all ${successCount} threat(s).\n\n✅ Files removed from device\n✅ Stored securely in quarantine\n\nManage quarantined files in the Quarantine section.`,
                   [{ text: 'OK' }]
                 );
               } else {
                 Alert.alert(
                   '⚠️ Partial Success',
-                  `Quarantined ${successCount} threat(s).\n\n${errorCount} file(s) could not be quarantined (may have been deleted or moved).`,
+                  `Quarantined ${successCount} threat(s).\n\n${errorCount} file(s) could not be quarantined (may have been already deleted or moved).`,
                   [{ text: 'OK' }]
                 );
               }
@@ -348,17 +368,17 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
     }
 
     Alert.alert(
-      '⚠️ Delete All Threats?',
-      `Are you sure you want to permanently delete all ${scanResult.threatsDetected.length} threat(s)?\n\nThis action cannot be undone!`,
+      '⚠️ Delete All Threats Permanently?',
+      `Are you sure you want to PERMANENTLY DELETE all ${scanResult.threatsDetected.length} threat(s)?\n\n⚠️ This action CANNOT be undone!\n⚠️ Files will be completely removed from your device!`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete All',
+          text: 'Delete All Permanently',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log(`🗑️ Attempting to delete all ${scanResult.threatsDetected.length} threats`);
-              
+              console.log(`🗑️ Attempting to permanently delete all ${scanResult.threatsDetected.length} threats`);
+
               // Import FileSystem dynamically
               let FileSystem: any = null;
               try {
@@ -378,16 +398,16 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
                   // Check if file exists
                   const fileInfo = await FileSystem.getInfoAsync(threat.filePath);
                   if (!fileInfo.exists) {
-                    console.warn(`⚠️ File not found: ${threat.fileName}`);
-                    errorCount++;
+                    console.warn(`⚠️ File not found (already deleted): ${threat.fileName}`);
+                    successCount++; // Count as success since goal is achieved
                     continue;
                   }
 
-                  // Delete the file
+                  // Delete the file PERMANENTLY from device
                   await FileSystem.deleteAsync(threat.filePath, { idempotent: true });
                   successCount++;
-                  console.log(`✅ Deleted: ${threat.fileName}`);
-                  
+                  console.log(`✅ Permanently deleted from device: ${threat.fileName}`);
+
                 } catch (error) {
                   console.error(`❌ Error deleting ${threat.fileName}:`, error);
                   errorCount++;
@@ -404,13 +424,13 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
               if (errorCount === 0) {
                 Alert.alert(
                   '✅ All Threats Deleted!', 
-                  `Successfully deleted all ${successCount} threat(s).\n\nYour device is now clean!`,
+                  `Successfully deleted all ${successCount} threat(s).\n\n✅ All malicious files permanently removed from your device\n✅ Your device is now clean!`,
                   [{ text: 'OK' }]
                 );
               } else {
                 Alert.alert(
                   '⚠️ Partial Success', 
-                  `Deleted ${successCount} threat(s).\n\n${errorCount} file(s) could not be deleted (may have been already deleted or moved).`,
+                  `Deleted ${successCount} threat(s).\n\n${errorCount} file(s) could not be deleted.`,
                   [{ text: 'OK' }]
                 );
               }
@@ -428,7 +448,7 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
   const handleQuarantineThreat = (threat: DeepScanThreat) => {
     Alert.alert(
       '🔒 Quarantine Threat?',
-      `Move this file to quarantine?\n\n${threat.fileName}\n\nThis will isolate the file in a secure location.`,
+      `Move this file to quarantine?\n\n${threat.fileName}\n\n✅ File will be REMOVED from current location\n✅ File will be stored securely in quarantine folder\n✅ You can delete it permanently later from Quarantine`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -453,9 +473,9 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
               );
 
               if (result.success) {
-                console.log('✅ Threat file quarantined successfully:', threat.fileName);
-              
-                // Remove from scan results (file is now quarantined)
+                console.log(`✅ Threat quarantined and removed from device: ${threat.fileName}`);
+
+                // Remove from scan results
                 if (scanResult) {
                   const updatedThreats = scanResult.threatsDetected.filter(t => t.id !== threat.id);
                   setScanResult({
@@ -465,18 +485,8 @@ const DeepScanScreen: React.FC<DeepScanScreenProps> = ({ onGoBack, onNavigateToQ
                 }
 
                 Alert.alert(
-                  '✅ Quarantined', 
-                  `Threat file "${threat.fileName}" has been moved to quarantine.\n\nYou can manage quarantined files in the Quarantine section.`,
-                  [
-                    { text: 'OK' },
-                    { 
-                      text: 'View Quarantine', 
-                      onPress: () => {
-                        // Navigate to quarantine screen if available
-                        console.log('🔍 Navigate to quarantine screen');
-                      }
-                    }
-                  ]
+                  '✅ Quarantined Successfully',
+                  `"${threat.fileName}" has been moved to quarantine.\n\n✅ File removed from device\n✅ Stored securely in quarantine\n\nManage it in the Quarantine section.`
                 );
               } else {
                 Alert.alert('❌ Error', `Failed to quarantine file: ${result.error}`);

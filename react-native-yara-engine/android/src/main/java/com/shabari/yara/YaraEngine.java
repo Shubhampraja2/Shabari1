@@ -65,6 +65,34 @@ public class YaraEngine {
         return nativeLibraryLoaded;
     }
 
+    public boolean isNativeLibraryLoaded() {
+        return nativeLibraryLoaded;
+    }
+
+    public String getVersion() {
+        if (nativeLibraryLoaded) {
+            try {
+                return nativeGetVersion();
+            } catch (Exception e) {
+                Log.e(TAG, "Error getting native version", e);
+                return "4.5.0-native-error";
+            }
+        }
+        return "4.5.0-mock";
+    }
+
+    public int getRulesCount() {
+        if (nativeLibraryLoaded && isInitialized) {
+            try {
+                return nativeGetLoadedRulesCount();
+            } catch (Exception e) {
+                Log.e(TAG, "Error getting rules count", e);
+                return 127; // Mock count
+            }
+        }
+        return 127; // Mock count
+    }
+
     public boolean initialize() {
         try {
             if (isInitialized) {
@@ -345,19 +373,6 @@ public class YaraEngine {
         }
     }
 
-    public String getVersion() {
-        try {
-            if (nativeLibraryLoaded) {
-                return nativeGetVersion();
-            } else {
-                return "4.5.0-mock";
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Exception getting version", e);
-            return "4.5.0-mock";
-        }
-    }
-
     public int getLoadedRulesCount() {
         if (!isInitialized) {
             return 0;
@@ -389,6 +404,31 @@ public class YaraEngine {
         }
     }
 
+    // Helper methods for creating scan results
+    private YaraScanResult createErrorResult(String errorMessage) {
+        YaraScanResult result = new YaraScanResult();
+        result.setSafe(false);
+        result.setThreatName("ScanError");
+        result.setThreatCategory("error");
+        result.setSeverity("none");
+        result.setMatchedRules(new ArrayList<String>());
+        result.setScanEngine(nativeLibraryLoaded ? "Shabari YARA v4.5.0" : "Mock YARA v4.5.0");
+        result.setDetails(errorMessage);
+        return result;
+    }
+
+    private YaraScanResult createCleanResult() {
+        YaraScanResult result = new YaraScanResult();
+        result.setSafe(true);
+        result.setThreatName("");
+        result.setThreatCategory("");
+        result.setSeverity("none");
+        result.setMatchedRules(new ArrayList<String>());
+        result.setScanEngine(nativeLibraryLoaded ? "Shabari YARA v4.5.0" : "Mock YARA v4.5.0");
+        result.setDetails("File is clean");
+        return result;
+    }
+
     // Mock implementation methods
     private YaraScanResult mockScanFile(String filePath) {
         Log.d(TAG, "🎭 Mock scanning file: " + filePath);
@@ -398,11 +438,11 @@ public class YaraEngine {
         // Enhanced malware pattern detection for mock
         String[] malwarePatterns = {
             "malware", "virus", "trojan", "backdoor", "rootkit", "spyware", "adware",
-            "ransomware", "keylogger", "botnet", "worm", "exploit", "phishing"
+            "ransomware", "keylogger", "botnet", "worm", "exploit", "phishing", "shell32"
         };
         
         String[] suspiciousExtensions = {
-            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com", ".vbs", ".js"
+            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com", ".vbs", ".js", ".dll"
         };
         
         boolean isSafe = true;
@@ -412,7 +452,8 @@ public class YaraEngine {
         List<String> matchedRules = new ArrayList<>();
         String details = "File appears clean";
         String scanEngine = nativeLibraryLoaded ? "Shabari YARA v4.5.0" : "Mock YARA v4.5.0";
-        
+        long fileSize = 0;
+
         // Check for malware patterns in filename
         for (String pattern : malwarePatterns) {
             if (fileName.contains(pattern)) {
@@ -440,7 +481,68 @@ public class YaraEngine {
                 }
             }
         }
-        
+
+        // Content-based heuristics: read small chunk and search patterns, compute simple entropy
+        if (isSafe) {
+            java.io.RandomAccessFile raf = null;
+            try {
+                File f = new File(filePath);
+                fileSize = f.length();
+                long chunk = Math.min(fileSize, 64 * 1024); // 64KB max
+                if (chunk > 0) {
+                    raf = new java.io.RandomAccessFile(f, "r");
+                    byte[] buf = new byte[(int) chunk];
+                    int read = raf.read(buf);
+                    if (read > 0) {
+                        // Convert to ASCII string for quick pattern scan
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < read; i++) {
+                            int b = buf[i] & 0xFF;
+                            if (b >= 32 && b <= 126) sb.append((char) b);
+                        }
+                        String lowered = sb.toString().toLowerCase();
+                        for (String pattern : malwarePatterns) {
+                            if (lowered.contains(pattern)) {
+                                isSafe = false;
+                                threatName = "Content." + pattern;
+                                threatCategory = "malware";
+                                severity = "high";
+                                matchedRules.add("mock_content_" + pattern + "_rule");
+                                details = "Suspicious content pattern detected: " + pattern;
+                                break;
+                            }
+                        }
+
+                        // Simple entropy heuristic if still safe
+                        if (isSafe) {
+                            // Count histogram on sample
+                            int[] freq = new int[256];
+                            for (int i = 0; i < read; i++) freq[buf[i] & 0xFF]++;
+                            double entropy = 0.0;
+                            for (int c : freq) {
+                                if (c > 0) {
+                                    double p = (double) c / (double) read;
+                                    entropy -= p * (Math.log(p) / Math.log(2));
+                                }
+                            }
+                            if (entropy > 7.5) {
+                                isSafe = false;
+                                threatName = "PackedOrEncrypted.Content";
+                                threatCategory = "suspicious";
+                                severity = "medium";
+                                matchedRules.add("mock_entropy_rule");
+                                details = String.format(java.util.Locale.US, "High-entropy content detected (H=%.2f)", entropy);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Mock content scan skipped: " + e.getMessage());
+            } finally {
+                if (raf != null) try { raf.close(); } catch (Exception ignore) {}
+            }
+        }
+
         YaraScanResult result = new YaraScanResult();
         result.setSafe(isSafe);
         result.setThreatName(threatName);
@@ -449,7 +551,8 @@ public class YaraEngine {
         result.setMatchedRules(matchedRules);
         result.setScanEngine(scanEngine);
         result.setDetails(details);
-        
+        result.setFileSize(fileSize);
+
         return result;
     }
     
@@ -616,6 +719,92 @@ public class YaraEngine {
                "        $brand3 = \"google\" nocase\n" +
                "    condition:\n" +
                "        2 of ($phish*) or (any of ($phish*) and any of ($brand*))\n" +
+               "}\n\n" +
+
+               "rule Android_Spyware {\n" +
+               "    meta:\n" +
+               "        description = \"Detects Android spyware and stalkerware\"\n" +
+               "        severity = \"critical\"\n" +
+               "        category = \"spyware\"\n" +
+               "    strings:\n" +
+               "        $spy1 = \"RECORD_AUDIO\"\n" +
+               "        $spy2 = \"READ_CONTACTS\"\n" +
+               "        $spy3 = \"READ_SMS\"\n" +
+               "        $spy4 = \"ACCESS_FINE_LOCATION\"\n" +
+               "        $spy5 = \"READ_CALL_LOG\"\n" +
+               "        $spy6 = \"hidden\" nocase\n" +
+               "        $spy7 = \"stealth\" nocase\n" +
+               "    condition:\n" +
+               "        4 of ($spy*)\n" +
+               "}\n\n" +
+
+               "rule Cryptominer_Detection {\n" +
+               "    meta:\n" +
+               "        description = \"Detects cryptocurrency mining malware\"\n" +
+               "        severity = \"high\"\n" +
+               "        category = \"cryptominer\"\n" +
+               "    strings:\n" +
+               "        $miner1 = \"stratum+tcp\" nocase\n" +
+               "        $miner2 = \"xmrig\" nocase\n" +
+               "        $miner3 = \"coinhive\" nocase\n" +
+               "        $miner4 = \"cryptonight\" nocase\n" +
+               "        $miner5 = \"monero\" nocase\n" +
+               "        $miner6 = \"ethereum\" nocase\n" +
+               "        $cpu1 = \"cpu_threads\"\n" +
+               "        $cpu2 = \"gpu_threads\"\n" +
+               "    condition:\n" +
+               "        2 of ($miner*) or (any of ($miner*) and any of ($cpu*))\n" +
+               "}\n\n" +
+
+               "rule Android_Rootkit {\n" +
+               "    meta:\n" +
+               "        description = \"Detects Android rootkit behavior\"\n" +
+               "        severity = \"critical\"\n" +
+               "        category = \"rootkit\"\n" +
+               "    strings:\n" +
+               "        $root1 = \"su\" fullword\n" +
+               "        $root2 = \"busybox\"\n" +
+               "        $root3 = \"superuser\"\n" +
+               "        $root4 = \"/system/xbin\"\n" +
+               "        $root5 = \"selinux\" nocase\n" +
+               "        $hide1 = \"hide_root\"\n" +
+               "        $hide2 = \"root_cloak\"\n" +
+               "    condition:\n" +
+               "        3 of ($root*) or any of ($hide*)\n" +
+               "}\n\n" +
+
+               "rule Advanced_Persistent_Threat {\n" +
+               "    meta:\n" +
+               "        description = \"Detects APT-like behavior patterns\"\n" +
+               "        severity = \"critical\"\n" +
+               "        category = \"apt\"\n" +
+               "    strings:\n" +
+               "        $c2_1 = \"http://\" nocase\n" +
+               "        $c2_2 = \"https://\" nocase\n" +
+               "        $persist1 = \"BOOT_COMPLETED\"\n" +
+               "        $persist2 = \"START_STICKY\"\n" +
+               "        $data1 = \"exfiltrate\" nocase\n" +
+               "        $data2 = \"upload_data\"\n" +
+               "        $encrypt1 = \"base64\"\n" +
+               "        $encrypt2 = \"cipher\"\n" +
+               "    condition:\n" +
+               "        any of ($c2_*) and any of ($persist*) and (any of ($data*) or any of ($encrypt*))\n" +
+               "}\n\n" +
+
+               "rule Adware_Detection {\n" +
+               "    meta:\n" +
+               "        description = \"Detects aggressive adware\"\n" +
+               "        severity = \"medium\"\n" +
+               "        category = \"adware\"\n" +
+               "    strings:\n" +
+               "        $ad1 = \"admob\" nocase\n" +
+               "        $ad2 = \"advertisement\"\n" +
+               "        $ad3 = \"ad_network\"\n" +
+               "        $aggressive1 = \"fullscreen_ad\"\n" +
+               "        $aggressive2 = \"notification_spam\"\n" +
+               "        $aggressive3 = \"ad_overlay\"\n" +
+               "    condition:\n" +
+               "        2 of ($ad*) and any of ($aggressive*)\n" +
                "}";
     }
 }

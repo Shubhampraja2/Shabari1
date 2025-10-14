@@ -740,6 +740,7 @@ export class DeepScanService {
 
   /**
    * Perform heuristic-based scanning for files
+   * ✅ ENHANCED: Now includes file content analysis and signature detection
    */
   private async performHeuristicScan(
     filePath: string,
@@ -749,46 +750,79 @@ export class DeepScanService {
     const suspiciousIndicators: string[] = [];
     const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
 
+    // ✅ ENHANCED: Read file magic bytes for better detection
+    let fileMagicBytes: string | null = null;
+    try {
+      // Read first 16 bytes of file for signature detection
+      const fileContent = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.Base64,
+        length: 16
+      });
+      fileMagicBytes = fileContent.substring(0, 16);
+
+      // Check for known malware signatures
+      if (this.containsMalwareSignature(fileMagicBytes, fileName)) {
+        suspiciousIndicators.push('❌ MALWARE SIGNATURE DETECTED in file content!');
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not read file magic bytes:', error);
+    }
+
     // Dangerous file extensions
     const dangerousExtensions = [
       'exe', 'scr', 'bat', 'cmd', 'pif', 'vbs', 'js', 'jar',
-      'dmg', 'deb', 'rpm', 'sh', 'apk', 'ipa'
+      'dmg', 'deb', 'rpm', 'sh', 'apk', 'ipa', 'msi', 'com'
     ];
 
     if (dangerousExtensions.includes(fileExtension)) {
-      suspiciousIndicators.push(`Potentially dangerous file type: .${fileExtension}`);
+      suspiciousIndicators.push(`⚠️ Potentially dangerous file type: .${fileExtension}`);
     }
 
-    // Suspicious file names
+    // ✅ ENHANCED: More comprehensive suspicious keywords
     const suspiciousKeywords = [
       'virus', 'trojan', 'malware', 'worm', 'ransomware', 'keylog',
-      'backdoor', 'rootkit', 'spyware', 'adware', 'crack', 'keygen'
+      'backdoor', 'rootkit', 'spyware', 'adware', 'crack', 'keygen',
+      'hack', 'exploit', 'payload', 'rat', 'botnet', 'miner'
     ];
 
     if (suspiciousKeywords.some(keyword => fileName.toLowerCase().includes(keyword))) {
-      suspiciousIndicators.push('Suspicious filename pattern detected');
+      suspiciousIndicators.push('⚠️ Suspicious filename pattern detected');
     }
 
     // Multiple file extensions (potential obfuscation)
     const extensionCount = (fileName.match(/\./g) || []).length;
     if (extensionCount > 2) {
-      suspiciousIndicators.push('Multiple file extensions detected (potential obfuscation)');
+      suspiciousIndicators.push('⚠️ Multiple file extensions detected (potential obfuscation)');
     }
 
     // Hidden files (starting with .)
     if (fileName.startsWith('.') && !this.isCommonHiddenFile(fileName)) {
-      suspiciousIndicators.push('Hidden file detected');
+      suspiciousIndicators.push('⚠️ Hidden file detected');
+    }
+
+    // ✅ NEW: Check file size anomalies
+    if (fileExtension === 'apk' && fileSize < 10 * 1024) {
+      suspiciousIndicators.push('⚠️ Suspiciously small APK file (< 10KB)');
+    }
+
+    // ✅ NEW: Check for executable disguised as document
+    const documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
+    if (documentExtensions.includes(fileExtension) && fileMagicBytes) {
+      // Check if file has executable signatures despite document extension
+      if (this.hasExecutableSignature(fileMagicBytes)) {
+        suspiciousIndicators.push('❌ CRITICAL: Executable disguised as document!');
+      }
     }
 
     const isSafe = suspiciousIndicators.length === 0;
 
     return {
       isSafe,
-      threatName: isSafe ? undefined : 'Suspicious File Properties',
-      scanEngine: 'Deep Scan Heuristic Analyzer',
+      threatName: isSafe ? undefined : 'Suspicious File Detected',
+      scanEngine: 'Enhanced Deep Scan Heuristic Analyzer',
       scanTime: new Date(),
       details: isSafe 
-        ? 'File passed heuristic security checks' 
+        ? 'File passed enhanced heuristic security checks'
         : `Security warnings:\n${suspiciousIndicators.join('\n')}`,
       filePath,
       fileSize
@@ -796,180 +830,80 @@ export class DeepScanService {
   }
 
   /**
-   * Create a threat record from scan result
+   * ✅ NEW: Check for known malware signatures in file content
    */
-  private async createThreatRecord(
-    filePath: string,
-    fileName: string,
-    fileSize: number,
-    scanResult: FileScanResult
-  ): Promise<DeepScanThreat> {
-    // Generate file hash for identification (if expo-crypto is available)
-    let fileHash: string | undefined;
-    if (Crypto) {
-      try {
-        const fileContent = await FileSystem.readAsStringAsync(filePath, {
-          encoding: FileSystem.EncodingType.Base64,
-          length: 1024 // Only hash first 1KB for performance
-        });
-        fileHash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          fileContent
-        );
-      } catch (error) {
-        console.warn('⚠️ Could not generate file hash:', error);
+  private containsMalwareSignature(magicBytes: string, fileName: string): boolean {
+    // Known malware signatures (Base64 encoded patterns)
+    const malwareSignatures = [
+      'TVqQAAMAAAAEAAAA', // PE executable header (MZ)
+      '504B0304', // ZIP header (used by some malware)
+      '7F454C46', // ELF executable
+      'CAFEBABE', // Java class file
+    ];
+
+    // Check if file contains any known malware signatures
+    for (const signature of malwareSignatures) {
+      if (magicBytes.includes(signature)) {
+        console.log(`🚨 Malware signature match: ${signature} in ${fileName}`);
+        return true;
       }
-    } else {
-      // Fallback: Use simple timestamp-based hash if crypto not available
-      fileHash = `fallback_${Date.now()}_${fileName}`;
     }
 
-    // Determine threat type
-    let threatType: DeepScanThreat['threatType'] = 'unknown';
-    const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
+    return false;
+  }
 
-    if (fileExtension === 'apk') {
-      threatType = 'suspicious_apk';
-    } else if (scanResult.threatName?.toLowerCase().includes('malware')) {
-      threatType = 'malware';
-    } else if (['exe', 'scr', 'bat', 'cmd', 'vbs'].includes(fileExtension)) {
-      threatType = 'dangerous_file';
-    } else if (scanResult.threatName?.toLowerCase().includes('corrupt')) {
-      threatType = 'corrupted_file';
-    } else {
-      threatType = 'suspicious_apk';
-    }
+  /**
+   * ✅ NEW: Check if file has executable signature
+   */
+  private hasExecutableSignature(magicBytes: string): boolean {
+    const executableSignatures = [
+      'TVqQAAMAAAAEAAAA', // PE/EXE
+      '504B0304',          // ZIP/APK
+      '7F454C46',          // ELF
+      'CAFEBABE',          // Java
+      '4D5A',              // DOS MZ header
+    ];
 
-    // Determine severity
-    let severity: DeepScanThreat['severity'] = 'medium';
-    if (scanResult.threatName?.toLowerCase().includes('critical')) {
-      severity = 'critical';
-    } else if (scanResult.threatName?.toLowerCase().includes('high')) {
-      severity = 'high';
-    } else if (scanResult.threatName?.toLowerCase().includes('low')) {
-      severity = 'low';
-    } else if (threatType === 'malware' || threatType === 'suspicious_apk') {
-      severity = 'high';
-    }
-
-    return {
-      id: this.generateThreatId(),
-      filePath,
-      fileName,
-      fileSize,
-      threatType,
-      threatName: scanResult.threatName || 'Unknown Threat',
-      severity,
-      details: scanResult.details,
-      scanEngine: scanResult.scanEngine,
-      detectedAt: new Date(),
-      fileHash,
-      yaraRules: scanResult.metadata?.category ? [scanResult.metadata.category] : undefined
-    };
+    return executableSignatures.some(sig => magicBytes.includes(sig));
   }
 
   /**
    * Helper: Check if file is a system file
+   * ✅ FIXED: Less aggressive filtering - only skip actual system files, not legitimate files
    */
   private isSystemFile(fileName: string): boolean {
+    // Only skip actual system files, not development files in production
     const systemFiles = [
       '.nomedia', '.thumbnails', '.trashed', '.DS_Store',
       'Thumbs.db', 'desktop.ini'
     ];
-    
-    // Development and build-related files that get regenerated
-    const developmentFiles = [
-      'index.android.bundle', 'index.ios.bundle', 'bundle.js',
-      'metro.config.js', 'babel.config.js', 'app.config.js',
-      'package.json', 'package-lock.json', 'yarn.lock',
-      'node_modules', '.expo', '.metro', '.babel',
-      'android', 'ios', 'web', 'dist', 'build',
-      '*.log', '*.tmp', '*.temp', '*.cache'
-    ];
-    
-    // Check exact matches
-    if (systemFiles.includes(fileName)) {
-      return true;
-    }
-    
-    // Check development file patterns
-    for (const pattern of developmentFiles) {
-      if (pattern.includes('*')) {
-        const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-        if (regex.test(fileName)) {
-          return true;
-        }
-      } else if (fileName.includes(pattern)) {
+
+    // ✅ FIXED: Only skip development files in development mode
+    // In production, we should scan ALL files to detect threats
+    if (__DEV__) {
+      const developmentFiles = [
+        'index.android.bundle', 'index.ios.bundle', 'bundle.js',
+        'metro.config.js', 'babel.config.js', 'app.config.js',
+        'package.json', 'package-lock.json', 'yarn.lock',
+      ];
+
+      if (developmentFiles.includes(fileName)) {
         return true;
       }
-    }
-    
-    // Skip files in development mode that are likely to be regenerated
-    if (__DEV__) {
+
+      // Check development file patterns only in dev mode
       const devPatterns = [
         'bundle', 'metro', 'expo', 'react-native', 'hermes',
-        'index.', 'main.', 'app.', 'entry.'
       ];
-      
+
       for (const pattern of devPatterns) {
         if (fileName.toLowerCase().includes(pattern.toLowerCase())) {
           return true;
         }
       }
     }
-    
-    return false;
-  }
 
-  /**
-   * Helper: Check if file is a common hidden file
-   */
-  private isCommonHiddenFile(fileName: string): boolean {
-    const commonHidden = [
-      '.nomedia', '.gitignore', '.htaccess', '.bashrc', '.profile'
-    ];
-    return commonHidden.includes(fileName);
+    // Check exact matches for system files (always skip these)
+    return systemFiles.includes(fileName);
   }
-
-  /**
-   * Helper: Get display name for directory
-   */
-  private getDirectoryName(path: string): string {
-    const parts = path.split('/');
-    return parts[parts.length - 1] || path;
-  }
-
-  /**
-   * Helper: Generate unique scan ID
-   */
-  private generateScanId(): string {
-    return `scan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Helper: Generate unique threat ID
-   */
-  private generateThreatId(): string {
-    return `threat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Helper: Notify progress callback
-   */
-  private notifyProgress(
-    callback: ((progress: DeepScanProgress) => void) | undefined,
-    progress: DeepScanProgress
-  ): void {
-    if (callback) {
-      try {
-        callback(progress);
-      } catch (error) {
-        console.error('❌ Error in progress callback:', error);
-      }
-    }
-  }
-}
-
-// Export singleton instance
-export default DeepScanService.getInstance();
 

@@ -2,11 +2,11 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.shabari.yara"
-    compileSdkVersion 34
-    buildToolsVersion "34.0.0"
+    compileSdkVersion 35
+    buildToolsVersion "35.0.0"
 
     defaultConfig {
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 34
         versionCode 1
         versionName "1.0.0"
@@ -15,6 +15,8 @@ android {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
 
+        // CONDITIONAL: Only compile C++ if jniLibs are empty (local builds)
+        // For EAS builds, prebuilt libraries will already exist
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17 -frtti -fexceptions"
@@ -27,7 +29,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            
+
             ndk {
                 debugSymbolLevel 'SYMBOL_TABLE'
             }
@@ -38,6 +40,7 @@ android {
         }
     }
 
+    // CONDITIONAL: CMake compilation (enabled for local builds)
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -59,37 +62,24 @@ android {
         main {
             java.srcDirs = ['src/main/java']
             jni.srcDirs = []
+            // IMPORTANT: Use prebuilt native libraries from jniLibs folder
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
 }
 
 dependencies {
     implementation 'com.facebook.react:react-native:+'
     implementation 'androidx.annotation:annotation:1.7.0'
-    
-    // Test dependencies
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
-
-// Task to build AAR
-task buildAAR(type: Copy) {
-    dependsOn 'assembleRelease'
-    from 'build/outputs/aar/'
-    into '../dist/'
-    include '*.aar'
-    rename { String fileName ->
-        fileName.replace('android-release', 'react-native-yara-engine')
-    }
-}
-
-// Clean task
-task cleanNative(type: Delete) {
-    delete 'build'
-    delete '.cxx'
-}
-
-clean.dependsOn cleanNative
-

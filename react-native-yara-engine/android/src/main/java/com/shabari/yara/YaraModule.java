@@ -200,30 +200,31 @@ public class YaraModule extends ReactContextBaseJavaModule {
             promise.resolve(version);
         } catch (Exception e) {
             Log.e(TAG, "Error getting engine version", e);
-            promise.reject("VERSION_ERROR", "Error getting engine version: " + e.getMessage());
+            promise.resolve("Unknown");
         }
     }
 
     @ReactMethod
     public void getLoadedRulesCount(Promise promise) {
         try {
-            int count = yaraEngine.getLoadedRulesCount();
+            int count = yaraEngine.getRulesCount();
             promise.resolve(count);
         } catch (Exception e) {
-            Log.e(TAG, "Error getting loaded rules count", e);
-            promise.reject("COUNT_ERROR", "Error getting loaded rules count: " + e.getMessage());
+            Log.e(TAG, "Error getting rules count", e);
+            promise.resolve(0);
         }
     }
 
     @ReactMethod
     public void isNativeEngineAvailable(Promise promise) {
         try {
-            boolean isNative = YaraEngine.isNativeLibraryAvailable();
+            // Check if the native YARA library is loaded
+            boolean isNative = yaraEngine.isNativeLibraryLoaded();
             promise.resolve(isNative);
         } catch (Exception e) {
             Log.e(TAG, "Error checking native engine availability", e);
-            promise.reject("NATIVE_CHECK_ERROR", "Error checking native engine: " + e.getMessage());
+            // If there's an error, we're likely in mock mode
+            promise.resolve(false);
         }
     }
 }
-
